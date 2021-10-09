@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <fstream>
 #include <iostream>
 #include <map>
 #include <set>
@@ -11,6 +12,8 @@
 #include <htslib/faidx.h>
 #include <htslib/vcf.h>
 #include <htslib/synced_bcf_reader.h>
+
+#include <unistd.h>
 
 const auto MIN(const auto a, const auto b) { return ((a) < (b) ? (a) : (b)); }
 const auto MAX(const auto a, const auto b) { return ((a) > (b) ? (a) : (b)); }
@@ -39,11 +42,11 @@ cHapSubstr_to_totDP(const std::string & cHapSubstr) {
 }
 
 std::vector<std::vector<std::tuple<int, std::string, std::string>>> 
-vecof_pos_ref_alt_tup_split(const std::vector<std::tuple<int, std::string, std::string>> & vecof_pos_ref_alt_tup) {
+vecof_pos_ref_alt_tup_split(const std::vector<std::tuple<int, std::string, std::string>> & vecof_pos_ref_alt_tup, int linkbases) {
     std::vector<std::vector<std::tuple<int, std::string, std::string>>> vecof_vecof_pos_ref_alt_tup;
     int prev_pos = INT32_MIN;
     for (const auto & pos_ref_alt_tuple : vecof_pos_ref_alt_tup) {
-        if (std::get<0>(pos_ref_alt_tuple) >= prev_pos + 6) {
+        if (std::get<0>(pos_ref_alt_tuple) >= prev_pos + linkbases) {
             vecof_vecof_pos_ref_alt_tup.push_back(std::vector<std::tuple<int, std::string, std::string>>());
         }
         prev_pos = std::get<0>(pos_ref_alt_tuple) + (int)MAX(std::get<1>(pos_ref_alt_tuple).size(), std::get<2>(pos_ref_alt_tuple).size());
@@ -73,9 +76,57 @@ cHapString_to_cHapSubstrs(const std::string & cHapString) {
     return cHap_substrs;
 }
 
+std::map<std::string, int> build_tname2tid_from_faidx(const faidx_t *faidx) {
+    std::map<std::string, int> ret;
+    for (int i = 0; i < faidx_nseq(faidx); i++) {
+        ret.insert(std::make_pair(faidx_iseq(faidx, i), i));
+    }
+    return ret;
+}
+
+const int DEFAULT_B = 6;
+const int DEFAULT_D = 3;
+const double DEFAULT_F = 0.2 + 1e-6;
+
+void help(int argc, char **argv) {
+    fprintf(stderr, "Program %s version %s (%s)\n", argv[0], COMMIT_VERSION, COMMIT_DIFF_SH);
+    fprintf(stderr, "  This program combines simple variants into complex variants. \n");
+    
+    fprintf(stderr, "Usage: %s <REFERENCE-FASTA> <UVC-VCF-GZ> \n", argv[0]);
+    fprintf(stderr, "Optional parameters:\n");
+    fprintf(stderr, " -b maximum number of bases between variants to be considered as linked [default to %d].\n", DEFAULT_B);
+    fprintf(stderr, " -d minimum allele depth of the linked variants [default to %d].\n", DEFAULT_D);
+    fprintf(stderr, " -f minimum fraction of the linked variants [default to %f].\n", DEFAULT_F);
+    fprintf(stderr, " -T bed file that overrides the -b -d and -f parameters [default to None].\n");
+    
+    exit(-1);
+}
+
 int main(int argc, char **argv) {
-    const char *fastaref = argv[1];
-    const char *uvcvcf = argv[2];
+    
+    char *fastaref = NULL;
+    char *uvcvcf = NULL;
+    char *bedfile = NULL;
+    int linkbases1 = DEFAULT_B;
+    int linkdepth1 = DEFAULT_D;
+    double linkfrac1 = DEFAULT_F;
+    int opt = -1;
+    while ((opt = getopt(argc, argv, "b:d:f:")) != -1) {
+        switch (opt) {
+            case 'b': linkbases1 = atoi(optarg); break;
+            case 'd': linkdepth1 = atoi(optarg); break;
+            case 'f': linkfrac1 = atof(optarg); break;
+            case 'T': bedfile = optarg; break;
+            default: help(argc, argv);
+        }
+    }
+    for (int posidx = 0; optind < argc; optind++, posidx++) {
+        if (0 == posidx) { fastaref = argv[optind]; }
+        else if (1 == posidx) { uvcvcf = argv[optind]; }
+    }
+    if (NULL == fastaref || NULL == uvcvcf) {
+        help(argc, argv);
+    }
     
     faidx_t *faidx = fai_load(fastaref);
     htsFile *fp = vcf_open(uvcvcf, "r");
@@ -104,6 +155,16 @@ int main(int argc, char **argv) {
         assert(!strcmp(seqname, seqnames[i])); 
     }
     
+    std::ifstream bedstream;
+    std::map<std::string, int> tname2tid;
+    if (NULL != bedfile) { 
+        bedstream.open(bedfile); 
+        tname2tid = build_tname2tid_from_faidx(faidx);
+    }
+    int bedtid = -1;
+    int bedbeg = -1;
+    int bedend = -1;
+
     for (int i = 0; i < vcf_nseqs; i++) {
         const char *tname = faidx_iseq(faidx, i);
         int regionlen;
@@ -168,11 +229,52 @@ int main(int argc, char **argv) {
             if (valsize <= 0) { continue; }
             const int vcflineAD = bcfints[ndst_val - 1];
             const auto pos_ref_alt_tup_from_vcfline = std::make_tuple(line->pos, std::string(line->d.allele[0]), std::string(line->d.allele[1]));
+            
+            int linkbases = linkbases1;
+            int linkdepth = linkdepth1;
+            int linkfrac = linkfrac1;
+            if (bedfile != NULL && bedstream.good()) {
+                int vcftid = line->rid;
+                int vcfbeg = line->pos;
+                while (bedtid < vcftid || (bedtid == vcftid && bedbeg < vcfbeg)) {
+                    std::string line;
+                    getline(bedstream, line);
+                    if (line.empty()) { break; }
+                    std::istringstream linestream(line);
+                    std::string bedchrom;
+                    linestream >> bedchrom;
+                    linestream >> bedbeg;
+                    linestream >> bedend;
+                    if (tname2tid.find(bedchrom) == tname2tid.end()) {
+                        fprintf(stderr, "The bed file %s with line %s has invalid tname %s so this line is skipped!\n", bedfile, line.c_str(), bedchrom.c_str());
+                        bedtid = -1;
+                    } else {
+                        bedtid = tname2tid[bedchrom];
+                        std::string token;
+                        while (linestream.good()) {
+                            linestream >> token;
+                            if (!token.compare("-b")) {
+                                linestream >> token;
+                                linkbases = atoi(token.c_str());
+                            }
+                            if (!token.compare("-d")) {
+                                linestream >> token;
+                                linkdepth = atoi(token.c_str());
+                            }
+                            if (!token.compare("-f")) {
+                                linestream >> token;
+                                linkfrac = atof(token.c_str());
+                            }
+                        }
+                    }
+                }
+            }
+            
             for (int j = sampleidx; j < nsamples; j++) {
                 std::vector<std::string> cHap_substrs = cHapString_to_cHapSubstrs(bcfstring[j]);
                 for (std::string cHap_string : cHap_substrs) {
                     int complexvarDP = cHapSubstr_to_totDP(cHap_string);
-                    if (complexvarDP < 3 || complexvarDP * 5 < vcflineAD) {
+                    if (complexvarDP < linkdepth || complexvarDP < linkfrac * vcflineAD) {
                         continue; // this variant has low DP
                     }
                     auto vecof_pos_ref_alt_tup = map_from_cHap_string_to_vecof_pos_ref_alt_tup.find(cHap_string)->second;
@@ -182,7 +284,7 @@ int main(int argc, char **argv) {
                     
                     std::sort(vecof_pos_ref_alt_tup.begin(), vecof_pos_ref_alt_tup.end());
                     
-                    const auto vecof_vecof_pos_ref_alt_tup = vecof_pos_ref_alt_tup_split(vecof_pos_ref_alt_tup);
+                    const auto vecof_vecof_pos_ref_alt_tup = vecof_pos_ref_alt_tup_split(vecof_pos_ref_alt_tup, linkbases);
                     for (const auto & vecof_pos_ref_alt_tup1 : vecof_vecof_pos_ref_alt_tup) {
                         if (vecof_pos_ref_alt_tup1.size() <= 1) { 
                             continue; // this variant is not complex
@@ -247,6 +349,9 @@ int main(int argc, char **argv) {
             }
         }
         bcf_sr_destroy(sr);
+    }
+    if (NULL != bedfile) { 
+        bedstream.close(); 
     }
     bcf_hdr_destroy(bcf_hdr);
     vcf_close(fp);
