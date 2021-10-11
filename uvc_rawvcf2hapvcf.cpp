@@ -42,14 +42,24 @@ cHapSubstr_to_totDP(const std::string & cHapSubstr) {
 }
 
 std::vector<std::vector<std::tuple<int, std::string, std::string>>> 
-vecof_pos_ref_alt_tup_split(const std::vector<std::tuple<int, std::string, std::string>> & vecof_pos_ref_alt_tup, int linkbases) {
+vecof_pos_ref_alt_tup_split(const std::vector<std::tuple<int, std::string, std::string>> & vecof_pos_ref_alt_tup,
+        int defaultCB, int defaultCO, int defaultCE) {
     std::vector<std::vector<std::tuple<int, std::string, std::string>>> vecof_vecof_pos_ref_alt_tup;
     int prev_pos = INT32_MIN;
+    int prev_varlen = 0;
     for (const auto & pos_ref_alt_tuple : vecof_pos_ref_alt_tup) {
-        if (std::get<0>(pos_ref_alt_tuple) >= prev_pos + linkbases) {
+        int varlen = abs((int)(std::get<1>(pos_ref_alt_tuple).size()) - (int)(std::get<2>(pos_ref_alt_tuple).size()));
+        int link_n_bases = 0;
+        if (0 == varlen && 0 == prev_varlen) {
+            link_n_bases = defaultCB;
+        } else {
+            link_n_bases = defaultCO + ((varlen, prev_varlen) * defaultCE);
+        }
+        if (std::get<0>(pos_ref_alt_tuple) >= prev_pos + link_n_bases) {
             vecof_vecof_pos_ref_alt_tup.push_back(std::vector<std::tuple<int, std::string, std::string>>());
         }
         prev_pos = std::get<0>(pos_ref_alt_tuple) + (int)MAX(std::get<1>(pos_ref_alt_tuple).size(), std::get<2>(pos_ref_alt_tuple).size());
+        prev_varlen = varlen;
         vecof_vecof_pos_ref_alt_tup.back().push_back(pos_ref_alt_tuple);
     }
     return vecof_vecof_pos_ref_alt_tup;
@@ -86,10 +96,14 @@ std::map<std::string, int> build_tname2tid_from_faidx(const faidx_t *faidx) {
 
 const int DEFAULT_B = 6;
 const int DEFAULT_D = 3;
-const double DEFAULT_F = 0.2 + 1e-6;
+const double DEFAULT_F = 0.1 + 1e-6;
+const int DEFAULT_CB = 4; // SNV to SNV
+const int DEFAULT_CO = 6; // (SNV to InDel gap-open) and (InDel to InDel gap-open)
+const int DEFAULT_CE = 1; // (SNV to InDel gap-ext ) and (InDel to InDel gap-ext )
+// const int DEFAULT_CR = 10;   // (SNV to InDel repeat-decrease) and (InDel to InDel repeat-decrease)
 
 void help(int argc, char **argv) {
-    fprintf(stderr, "Program %s version %s (%s)\n", argv[0], COMMIT_VERSION, COMMIT_DIFF_SH);
+    fprintf(stderr, "Program %s version %s ( %s )\n", argv[0], COMMIT_VERSION, COMMIT_DIFF_SH);
     fprintf(stderr, "  This program combines simple variants into complex variants. \n");
     
     fprintf(stderr, "Usage: %s <REFERENCE-FASTA> <UVC-VCF-GZ> \n", argv[0]);
@@ -99,6 +113,10 @@ void help(int argc, char **argv) {
     fprintf(stderr, " -f minimum fraction of the linked variants [default to %f].\n", DEFAULT_F);
     fprintf(stderr, " -T bed file that overrides the -b -d and -f parameters [default to None].\n");
     
+    fprintf(stderr, " -B maximum number of bases between SNV and SNV to be considered as linked [default to %d].\n", DEFAULT_CB);
+    fprintf(stderr, " -O gap opening for the maximum number of bases between InDel and SNV/InDel to be considered as linked [default to %d].\n", DEFAULT_CO);
+    fprintf(stderr, " -E gap extension for the maximum number of bases between InDel and SNV/InDel to be considered as linked [default to %d].\n", DEFAULT_CE);
+    
     exit(-1);
 }
 
@@ -107,16 +125,20 @@ int main(int argc, char **argv) {
     char *fastaref = NULL;
     char *uvcvcf = NULL;
     char *bedfile = NULL;
-    int linkbases1 = DEFAULT_B;
     int linkdepth1 = DEFAULT_D;
     double linkfrac1 = DEFAULT_F;
+    int defaultCB1 = DEFAULT_CB;
+    int defaultCO1 = DEFAULT_CO;
+    int defaultCE1 = DEFAULT_CE;
     int opt = -1;
     while ((opt = getopt(argc, argv, "b:d:f:")) != -1) {
         switch (opt) {
-            case 'b': linkbases1 = atoi(optarg); break;
             case 'd': linkdepth1 = atoi(optarg); break;
             case 'f': linkfrac1 = atof(optarg); break;
             case 'T': bedfile = optarg; break;
+            case 'B': defaultCB1 = atoi(optarg); break;
+            case 'O': defaultCO1 = atoi(optarg); break;
+            case 'E': defaultCE1 = atoi(optarg); break;
             default: help(argc, argv);
         }
     }
@@ -230,9 +252,11 @@ int main(int argc, char **argv) {
             const int vcflineAD = bcfints[ndst_val - 1];
             const auto pos_ref_alt_tup_from_vcfline = std::make_tuple(line->pos, std::string(line->d.allele[0]), std::string(line->d.allele[1]));
             
-            int linkbases = linkbases1;
             int linkdepth = linkdepth1;
             int linkfrac = linkfrac1;
+            int defaultCB = defaultCB1;
+            int defaultCO = defaultCO1;
+            int defaultCE = defaultCE1;
             if (bedfile != NULL && bedstream.good()) {
                 int vcftid = line->rid;
                 int vcfbeg = line->pos;
@@ -253,10 +277,6 @@ int main(int argc, char **argv) {
                         std::string token;
                         while (linestream.good()) {
                             linestream >> token;
-                            if (!token.compare("-b")) {
-                                linestream >> token;
-                                linkbases = atoi(token.c_str());
-                            }
                             if (!token.compare("-d")) {
                                 linestream >> token;
                                 linkdepth = atoi(token.c_str());
@@ -264,6 +284,18 @@ int main(int argc, char **argv) {
                             if (!token.compare("-f")) {
                                 linestream >> token;
                                 linkfrac = atof(token.c_str());
+                            }
+                            if (!token.compare("-B")) {
+                                linestream >> token;
+                                defaultCB = atoi(token.c_str());
+                            }
+                            if (!token.compare("-O")) {
+                                linestream >> token;
+                                defaultCO = atoi(token.c_str());
+                            }
+                            if (!token.compare("-E")) {
+                                linestream >> token;
+                                defaultCE = atoi(token.c_str());
                             }
                         }
                     }
@@ -275,18 +307,22 @@ int main(int argc, char **argv) {
                 for (std::string cHap_string : cHap_substrs) {
                     int complexvarDP = cHapSubstr_to_totDP(cHap_string);
                     if (complexvarDP < linkdepth || complexvarDP < linkfrac * vcflineAD) {
+                        // fprintf(stderr, "Skipping the variant %s %d because it has low DP\n", tname, line->pos);
                         continue; // this variant has low DP
                     }
                     auto vecof_pos_ref_alt_tup = map_from_cHap_string_to_vecof_pos_ref_alt_tup.find(cHap_string)->second;
                     if (vecof_pos_ref_alt_tup.size() == 0) {
+                        // fprintf(stderr, "Skipping the variant %s %d because it has no variants!\n", tname, line->pos);
                         continue; // no variant is found
                     }
                     
                     std::sort(vecof_pos_ref_alt_tup.begin(), vecof_pos_ref_alt_tup.end());
                     
-                    const auto vecof_vecof_pos_ref_alt_tup = vecof_pos_ref_alt_tup_split(vecof_pos_ref_alt_tup, linkbases);
+                    const auto vecof_vecof_pos_ref_alt_tup = vecof_pos_ref_alt_tup_split(vecof_pos_ref_alt_tup,
+                        defaultCB, defaultCO, defaultCE);
                     for (const auto & vecof_pos_ref_alt_tup1 : vecof_vecof_pos_ref_alt_tup) {
                         if (vecof_pos_ref_alt_tup1.size() <= 1) { 
+                            // fprintf(stderr, "Skipping the variant %s %d because it is not complex\n", tname, line->pos);
                             continue; // this variant is not complex
                         }
                         
@@ -300,34 +336,58 @@ int main(int argc, char **argv) {
                             UPDATE_MIN(complexvar_begpos, pos);
                             UPDATE_MAX(complexvar_endpos, endpos);
                         }
-                        std::string complexref = refstring.substr(complexvar_begpos, complexvar_endpos - complexvar_begpos);
-                        std::vector<std::string> complexalt_;
-                        for (const auto base : complexref) {
-                            complexalt_.push_back(std::string(&base, 1));
+                        std::string complex_ref = refstring.substr(complexvar_begpos, complexvar_endpos - complexvar_begpos);
+                        std::vector<std::string> complex_alt_;
+                        for (const auto base : complex_ref) {
+                            complex_alt_.push_back(std::string(&base, 1));
                         }
                         for (auto pos_ref_alt_tup : vecof_pos_ref_alt_tup1) {
                             int pos = std::get<0>(pos_ref_alt_tup);
                             std::string ref = std::get<1>(pos_ref_alt_tup);
                             std::string alt = std::get<2>(pos_ref_alt_tup);
                             for (int k = pos; k < pos + (int)ref.size(); k++) {
-                                complexalt_[k - complexvar_begpos] = "";
+                                complex_alt_[k - complexvar_begpos] = "";
                             }
-                            complexalt_[pos - complexvar_begpos] = alt;
+                            complex_alt_[pos - complexvar_begpos] = alt;
                         }
-                        std::string complexalt = "";
-                        for (const auto subalt : complexalt_) {
-                            complexalt.append(subalt);
+                        std::string complex_alt = "";
+                        for (const auto subalt : complex_alt_) {
+                            complex_alt.append(subalt);
                         }
                         int vcfline_pos = (std::get<0>(pos_ref_alt_tup_from_vcfline));
-                        if (complexvar_begpos > vcfline_pos || vcfline_pos >= (complexvar_begpos + (int)MAX(complexref.size(), complexalt.size()))) { 
+                        if (complexvar_begpos > vcfline_pos || vcfline_pos >= (complexvar_begpos + (int)MAX(complex_ref.size(), complex_alt.size()))) { 
+                            /*
+                            fprintf(stderr, "Skipping the variant %s %d %s %s because it is outside the ROI\n", 
+                                tname, vcfline_pos, 
+                                std::get<1>(pos_ref_alt_tup_from_vcfline).c_str(), 
+                                std::get<2>(pos_ref_alt_tup_from_vcfline).c_str());
+                            */
                             continue; // this var is outside the complex var region
                         }
-                        const auto complexvar_3tup = std::make_tuple(complexvar_begpos, complexref, complexalt);
+                        const auto complexvar_3tup = std::make_tuple(complexvar_begpos, complex_ref, complex_alt);
                         
                         if (complexvar_3tups.find(complexvar_3tup) != complexvar_3tups.end()) { 
+                            fprintf(stderr, "Skipping the variant %s %d %s %s because it is already visited\n", 
+                                tname, vcfline_pos, 
+                                std::get<1>(pos_ref_alt_tup_from_vcfline).c_str(), 
+                                std::get<2>(pos_ref_alt_tup_from_vcfline).c_str());
                             continue; // this var has already been printed
                         }
-                        std::cout << tname << "\t" << (complexvar_begpos + 1) << "\t.\t" << complexref << "\t" << complexalt 
+                        int cv_begpos = complexvar_begpos;
+                        std::string cv_ref = complex_ref;
+                        std::string cv_alt = complex_alt;
+                        if (1) {
+                            size_t begpos_inc = 0;
+                            while ((begpos_inc + 1 < cv_ref.size())
+                                    && (begpos_inc + 1 < cv_alt.size())
+                                    && (cv_ref[begpos_inc] == (cv_alt[begpos_inc]))) {
+                                begpos_inc++;
+                            }
+                            cv_begpos += begpos_inc;
+                            cv_ref = cv_ref.substr(begpos_inc);
+                            cv_alt = cv_alt.substr(begpos_inc);
+                        }
+                        std::cout << tname << "\t" << (cv_begpos + 1) << "\t.\t" << cv_ref << "\t" << cv_alt 
                             << "\t.\t.\t" << "tcHap=" << cHap_string 
                             << ";tPRA="
                             << (std::get<0>(pos_ref_alt_tup_from_vcfline)) << "_"
