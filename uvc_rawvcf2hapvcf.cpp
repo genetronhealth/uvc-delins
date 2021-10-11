@@ -41,26 +41,41 @@ cHapSubstr_to_totDP(const std::string & cHapSubstr) {
     return ret;
 }
 
+inline int varlen2reflen(int varlen) {
+    if (varlen > 0) { return varlen * 2; }
+    else { return -varlen; }
+}
+
 std::vector<std::vector<std::tuple<int, std::string, std::string>>> 
-vecof_pos_ref_alt_tup_split(const std::vector<std::tuple<int, std::string, std::string>> & vecof_pos_ref_alt_tup,
-        int defaultCB, int defaultCO, int defaultCE) {
+vecof_pos_ref_alt_tup_split(const std::vector<std::tuple<int, std::string, std::string, int, int>> & vecof_pos_ref_alt_begpos_endpos_tup,
+        int defaultCB, int defaultCO, int defaultCE, bool enable_short_tandem_repeat_adjust) {
     std::vector<std::vector<std::tuple<int, std::string, std::string>>> vecof_vecof_pos_ref_alt_tup;
     int prev_pos = INT32_MIN;
     int prev_varlen = 0;
-    for (const auto & pos_ref_alt_tuple : vecof_pos_ref_alt_tup) {
-        int varlen = abs((int)(std::get<1>(pos_ref_alt_tuple).size()) - (int)(std::get<2>(pos_ref_alt_tuple).size()));
+    int nextof_prev = 0;
+    int prevof_curr = 0;
+    for (const auto & pos_ref_alt_begpos_endpos_tuple : vecof_pos_ref_alt_begpos_endpos_tup) {
+        int varlen = ((int)(std::get<1>(pos_ref_alt_begpos_endpos_tuple).size()) - (int)(std::get<2>(pos_ref_alt_begpos_endpos_tuple).size()));
+        prevof_curr = std::get<3>(pos_ref_alt_begpos_endpos_tuple);
         int link_n_bases = 0;
         if (0 == varlen && 0 == prev_varlen) {
             link_n_bases = defaultCB;
         } else {
-            link_n_bases = defaultCO + ((varlen, prev_varlen) * defaultCE);
+            link_n_bases = defaultCO + (MAX(varlen2reflen(varlen), abs(prev_varlen)) * defaultCE);
         }
-        if (std::get<0>(pos_ref_alt_tuple) >= prev_pos + link_n_bases) {
+        if (std::get<0>(pos_ref_alt_begpos_endpos_tuple) >= prev_pos + link_n_bases && ((!enable_short_tandem_repeat_adjust) || nextof_prev <= prevof_curr)) {
             vecof_vecof_pos_ref_alt_tup.push_back(std::vector<std::tuple<int, std::string, std::string>>());
         }
-        prev_pos = std::get<0>(pos_ref_alt_tuple) + (int)MAX(std::get<1>(pos_ref_alt_tuple).size(), std::get<2>(pos_ref_alt_tuple).size());
+        prev_pos = std::get<0>(pos_ref_alt_begpos_endpos_tuple) + (int)MAX(std::get<1>(pos_ref_alt_begpos_endpos_tuple).size(), std::get<2>(pos_ref_alt_begpos_endpos_tuple).size());
         prev_varlen = varlen;
-        vecof_vecof_pos_ref_alt_tup.back().push_back(pos_ref_alt_tuple);
+        nextof_prev = std::get<4>(pos_ref_alt_begpos_endpos_tuple);
+        vecof_vecof_pos_ref_alt_tup.back().push_back(
+            std::make_tuple(
+                std::get<0>(pos_ref_alt_begpos_endpos_tuple),
+                std::get<1>(pos_ref_alt_begpos_endpos_tuple),
+                std::get<2>(pos_ref_alt_begpos_endpos_tuple)
+            )
+        );
     }
     return vecof_vecof_pos_ref_alt_tup;
 }
@@ -130,8 +145,9 @@ int main(int argc, char **argv) {
     int defaultCB1 = DEFAULT_CB;
     int defaultCO1 = DEFAULT_CO;
     int defaultCE1 = DEFAULT_CE;
+    bool enable_short_tandem_repeat_adjust = false;
     int opt = -1;
-    while ((opt = getopt(argc, argv, "b:d:f:")) != -1) {
+    while ((opt = getopt(argc, argv, "b:d:f:B:O:E:S")) != -1) {
         switch (opt) {
             case 'd': linkdepth1 = atoi(optarg); break;
             case 'f': linkfrac1 = atof(optarg); break;
@@ -139,6 +155,7 @@ int main(int argc, char **argv) {
             case 'B': defaultCB1 = atoi(optarg); break;
             case 'O': defaultCO1 = atoi(optarg); break;
             case 'E': defaultCE1 = atoi(optarg); break;
+            case 'S': enable_short_tandem_repeat_adjust = true; break;
             default: help(argc, argv);
         }
     }
@@ -216,7 +233,7 @@ int main(int argc, char **argv) {
         // float *bcffloats = NULL;
         int32_t *bcfints = NULL;
         
-        std::map<std::string, std::vector<std::tuple<int, std::string, std::string>>> map_from_cHap_string_to_vecof_pos_ref_alt_tup;
+        std::map<std::string, std::vector<std::tuple<int, std::string, std::string, int, int>>> map_from_cHap_string_to_vecof_pos_ref_alt_begpos_endpos_tup;
         
         int nsamples = bcf_hdr_nsamples(bcf_hdr); 
         int sampleidx = nsamples - 1; // last sample
@@ -225,14 +242,22 @@ int main(int argc, char **argv) {
             bcf1_t *line = bcf_sr_get_line(sr, 0);
             bcf_unpack(line, BCF_UN_ALL);
             ndst_val = 0;
+            
+            fprintf(stderr, "Processing the line: tid = %d pos = %d\n", line->rid, line->pos);
+            int32_t *bcf6ints = NULL;
+            valsize = bcf_get_info_int32(bcf_hdr, line, "R3X2", &bcf6ints, &ndst_val);
+            if (valsize < 6) { continue; }
+            const int posleft = bcf6ints[0]; // + (bcf6ints[1] * bcf6ints[2]);
+            const int posright = bcf6ints[3] + (bcf6ints[4] * bcf6ints[5]);
+            
             valsize = bcf_get_format_string(bcf_hdr, line, "cHap", &bcfstring, &ndst_val);
             if (valsize <= 0) { continue; }
-            const auto pos_ref_alt_tup = std::make_tuple(line->pos, std::string(line->d.allele[0]), std::string(line->d.allele[1]));
+            const auto pos_ref_alt_begpos_endpos_tup = std::make_tuple(line->pos, std::string(line->d.allele[0]), std::string(line->d.allele[1]), posleft, posright);
             for (int j = sampleidx; j < nsamples; j++) {
                 std::vector<std::string> cHap_substrs = cHapString_to_cHapSubstrs(bcfstring[j]);
                 for (const std::string & cHap_string : cHap_substrs) {
-                    map_from_cHap_string_to_vecof_pos_ref_alt_tup.insert(std::make_pair(cHap_string, std::vector<std::tuple<int, std::string, std::string>>()));
-                    map_from_cHap_string_to_vecof_pos_ref_alt_tup[cHap_string].push_back(pos_ref_alt_tup);
+                    map_from_cHap_string_to_vecof_pos_ref_alt_begpos_endpos_tup.insert(std::make_pair(cHap_string, std::vector<std::tuple<int, std::string, std::string, int, int>>()));
+                    map_from_cHap_string_to_vecof_pos_ref_alt_begpos_endpos_tup[cHap_string].push_back(pos_ref_alt_begpos_endpos_tup);
                 }
             }
         }
@@ -251,7 +276,7 @@ int main(int argc, char **argv) {
             if (valsize <= 0) { continue; }
             const int vcflineAD = bcfints[ndst_val - 1];
             const auto pos_ref_alt_tup_from_vcfline = std::make_tuple(line->pos, std::string(line->d.allele[0]), std::string(line->d.allele[1]));
-            
+
             int linkdepth = linkdepth1;
             int linkfrac = linkfrac1;
             int defaultCB = defaultCB1;
@@ -310,16 +335,16 @@ int main(int argc, char **argv) {
                         // fprintf(stderr, "Skipping the variant %s %d because it has low DP\n", tname, line->pos);
                         continue; // this variant has low DP
                     }
-                    auto vecof_pos_ref_alt_tup = map_from_cHap_string_to_vecof_pos_ref_alt_tup.find(cHap_string)->second;
-                    if (vecof_pos_ref_alt_tup.size() == 0) {
+                    auto vecof_pos_ref_alt_begpos_endpos_tup = map_from_cHap_string_to_vecof_pos_ref_alt_begpos_endpos_tup.find(cHap_string)->second;
+                    if (vecof_pos_ref_alt_begpos_endpos_tup.size() == 0) {
                         // fprintf(stderr, "Skipping the variant %s %d because it has no variants!\n", tname, line->pos);
                         continue; // no variant is found
                     }
                     
-                    std::sort(vecof_pos_ref_alt_tup.begin(), vecof_pos_ref_alt_tup.end());
+                    std::sort(vecof_pos_ref_alt_begpos_endpos_tup.begin(), vecof_pos_ref_alt_begpos_endpos_tup.end());
                     
-                    const auto vecof_vecof_pos_ref_alt_tup = vecof_pos_ref_alt_tup_split(vecof_pos_ref_alt_tup,
-                        defaultCB, defaultCO, defaultCE);
+                    const auto vecof_vecof_pos_ref_alt_tup = vecof_pos_ref_alt_tup_split(vecof_pos_ref_alt_begpos_endpos_tup,
+                        defaultCB, defaultCO, defaultCE, enable_short_tandem_repeat_adjust);
                     for (const auto & vecof_pos_ref_alt_tup1 : vecof_vecof_pos_ref_alt_tup) {
                         if (vecof_pos_ref_alt_tup1.size() <= 1) { 
                             // fprintf(stderr, "Skipping the variant %s %d because it is not complex\n", tname, line->pos);
