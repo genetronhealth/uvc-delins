@@ -11,17 +11,17 @@ if [ $(echo "${1}" | grep skip-bcftools | wc -l) -eq 0 ]; then
     mkdir -p "${currdir}/ext/"
     cd "${currdir}/ext/"
     if [ $(echo "${1}" | grep skip-downloading-bcftools | wc -l) -eq 0 ]; then
-        wget --inet4-only https://github.com/samtools/bcftools/releases/download/1.11/bcftools-1.11.tar.bz2
+        wget --inet4-only https://github.com/samtools/bcftools/releases/download/1.13/bcftools-1.13.tar.bz2
     fi
-    tar -xvf bcftools-1.11.tar.bz2
-    cd "${currdir}/ext/bcftools-1.11"
+    tar -xvf bcftools-1.13.tar.bz2
+    cd "${currdir}/ext/bcftools-1.13"
     ./configure ${2}
     make -j 4
     cp bcftools "${currdir}/bin/"
     
     # htslib-*-lowdep is used for compiling UVC
-    cp -r "${currdir}/ext/bcftools-1.11/htslib-1.11" "${currdir}/ext/htslib-1.11-lowdep"
-    cd "${currdir}/ext/htslib-1.11-lowdep"
+    cp -r "${currdir}/ext/bcftools-1.13/htslib-1.13" "${currdir}/ext/htslib-1.13-lowdep"
+    cd "${currdir}/ext/htslib-1.13-lowdep"
     ./configure -disable-plugins --disable-libcurl --disable-s3 --disable-largefile ${2} # --disable-bz2 and --disable-lzma are both for disabling CRAM files
     make -j 4
     
