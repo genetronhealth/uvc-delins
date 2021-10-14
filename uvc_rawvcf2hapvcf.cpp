@@ -306,7 +306,7 @@ int main(int argc, char **argv) {
                 string_ndst_val = 0;
             }
             string_valsize = bcf_get_format_string(bcf_hdr, line, "cHap", &bcfstring, &string_ndst_val);
-            assert (1 == string_valsize);
+            assert (1 <= string_valsize || !fprintf(stderr, "The size of cHap is %d instead of at least 1!\n", string_valsize));
             valsize = bcf_get_info_int32(bcf_hdr, line, "tbDP", &bcfints, &ndst_val);
             int tbDP = bcfints[0];
             valsize = bcf_get_info_int32(bcf_hdr, line, "tDP", &bcfints, &ndst_val);
@@ -506,9 +506,9 @@ int main(int argc, char **argv) {
                             << (std::get<0>(pos_ref_alt_tup_from_vcfline)) << "_"
                             << (std::get<1>(pos_ref_alt_tup_from_vcfline)) << "_"
                             << (std::get<2>(pos_ref_alt_tup_from_vcfline))
-                            << ";tDP =" << tDPmin
-                            << ";tADR =" << other_join(tADRmin, ",")
-                            << ";tADRM =" << other_join(tADRmax, ",")
+                            << ";tDP=" << tDPmin
+                            << ";tADR=" << other_join(tADRmin, ",")
+                            << ";tADRM=" << other_join(tADRmax, ",")
                             << "\n";
                         for (auto it = complexvar_3tups.begin(); it != complexvar_3tups.end(); ) {
                             int endpos = std::get<0>(*it) + (int)MAX(std::get<1>(*it).size(), std::get<2>(*it).size());
