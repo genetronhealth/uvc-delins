@@ -148,7 +148,6 @@ std::map<std::string, int> build_tname2tid_from_faidx(const faidx_t *faidx) {
     return ret;
 }
 
-const int DEFAULT_B = 6;
 const int DEFAULT_D = 3;
 const double DEFAULT_F = 0.1 + 1e-6;
 const int DEFAULT_CB = 4; // SNV to SNV
@@ -162,14 +161,13 @@ void help(int argc, char **argv) {
     
     fprintf(stderr, "Usage: %s <REFERENCE-FASTA> <UVC-VCF-GZ> \n", argv[0]);
     fprintf(stderr, "Optional parameters:\n");
-    fprintf(stderr, " -b maximum number of bases between variants to be considered as linked [default to %d].\n", DEFAULT_B);
     fprintf(stderr, " -d minimum allele depth of the linked variants [default to %d].\n", DEFAULT_D);
     fprintf(stderr, " -f minimum fraction of the linked variants [default to %f].\n", DEFAULT_F);
-    fprintf(stderr, " -T bed file that overrides the -b -d and -f parameters [default to None].\n");
-    
     fprintf(stderr, " -B maximum number of bases between SNV and SNV to be considered as linked [default to %d].\n", DEFAULT_CB);
     fprintf(stderr, " -O gap opening for the maximum number of bases between InDel and SNV/InDel to be considered as linked [default to %d].\n", DEFAULT_CO);
     fprintf(stderr, " -E gap extension for the maximum number of bases between InDel and SNV/InDel to be considered as linked [default to %d].\n", DEFAULT_CE);
+    fprintf(stderr, " -T bed file that overrides the -d, -f, -B -O, and -E parameters in the defined regions [default to None].\n");
+    
     fprintf(stderr, " -S boolean flag indicating if short-tandem-repeats (STRs) should be considered in the merging of simple variants [default to false].\n");
     fprintf(stderr, " -L boolean flag indicating if left-trimming of bases occurring in both REF and ALT should be disabled [default to false].\n");
     fprintf(stderr, " -R boolean flag indicating if right-trimming of bases occurring in both REF and ALT should be disabled [default to false].\n");
