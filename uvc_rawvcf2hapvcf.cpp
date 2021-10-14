@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <fstream>
 #include <iostream>
 #include <map>
@@ -9,6 +10,7 @@
 #include <vector>
 
 #include <assert.h>
+#include <float.h>
 #include <htslib/faidx.h>
 #include <htslib/vcf.h>
 #include <htslib/synced_bcf_reader.h>
@@ -19,6 +21,36 @@ const auto MIN(const auto a, const auto b) { return ((a) < (b) ? (a) : (b)); }
 const auto MAX(const auto a, const auto b) { return ((a) > (b) ? (a) : (b)); }
 const auto UPDATE_MIN(auto & a, const auto b) { a = MIN(a, b); }
 const auto UPDATE_MAX(auto & a, const auto b) { a = MAX(a, b); }
+
+class VariantInfo {
+public:
+    float qual;
+    int tbDP;
+    int tDP;
+    std::array<int, 2> tADR;
+    VariantInfo(float q, int dp1, int dp2, std::array<int, 2> tADR1) {
+        qual = q;
+        tbDP = dp1;
+        tDP = dp2;
+        for (int i = 0; i < 2; i++) {
+            tADR[i] = tADR1[i];
+        }
+    };
+    bool operator < (const VariantInfo & vi2) const {
+        return 0;
+    }
+};
+
+template <class T>
+std::string
+other_join(const T & container, std::string sep = std::string(",")) {
+    std::string ret = "";
+    for (const auto & e : container) {
+        ret += std::to_string(e) + sep;
+    }
+    if (ret.size() > 0) { ret.pop_back(); }
+    return ret;
+}
 
 int 
 cHapSubstr_to_totDP(const std::string & cHapSubstr) {
@@ -46,26 +78,32 @@ inline int varlen2reflen(int varlen) {
     else { return -varlen; }
 }
 
-std::vector<std::vector<std::tuple<int, std::string, std::string>>> 
-vecof_pos_ref_alt_tup_split(const std::vector<std::tuple<int, std::string, std::string, int, int>> & vecof_pos_ref_alt_begpos_endpos_tup,
+std::vector<std::vector<std::tuple<int, std::string, std::string, VariantInfo>>> 
+vecof_pos_ref_alt_tup_split(const std::vector<std::tuple<int, std::string, std::string, int, int, VariantInfo>> & vecof_pos_ref_alt_begpos_endpos_tup,
         int defaultCB, int defaultCO, int defaultCE, bool enable_short_tandem_repeat_adjust) {
-    std::vector<std::vector<std::tuple<int, std::string, std::string>>> vecof_vecof_pos_ref_alt_tup;
+    std::vector<std::vector<std::tuple<int, std::string, std::string, VariantInfo>>> vecof_vecof_pos_ref_alt_tup;
     int prev_pos = INT32_MIN;
     int prev_varlen = 0;
     int nextof_prev = 0;
     int prevof_curr = 0;
+    int prev_link_n_bases = 0;
+    int delim_pos = 0;
     for (const auto & pos_ref_alt_begpos_endpos_tuple : vecof_pos_ref_alt_begpos_endpos_tup) {
         int varlen = ((int)(std::get<1>(pos_ref_alt_begpos_endpos_tuple).size()) - (int)(std::get<2>(pos_ref_alt_begpos_endpos_tuple).size()));
-        prevof_curr = std::get<3>(pos_ref_alt_begpos_endpos_tuple);
+        const VariantInfo & variantinfo = std::get<5>(pos_ref_alt_begpos_endpos_tuple);
+        
         int link_n_bases = 0;
         if (0 == varlen && 0 == prev_varlen) {
             link_n_bases = defaultCB;
         } else {
             link_n_bases = defaultCO + (MAX(varlen2reflen(varlen), abs(prev_varlen)) * defaultCE);
         }
-        if (std::get<0>(pos_ref_alt_begpos_endpos_tuple) >= prev_pos + link_n_bases && ((!enable_short_tandem_repeat_adjust) || nextof_prev <= prevof_curr)) {
-            vecof_vecof_pos_ref_alt_tup.push_back(std::vector<std::tuple<int, std::string, std::string>>());
+        UPDATE_MAX(delim_pos, prev_pos + MAX(link_n_bases, prev_link_n_bases));
+        int curr_pos = std::get<0>(pos_ref_alt_begpos_endpos_tuple);
+        if (curr_pos >= delim_pos && ((!enable_short_tandem_repeat_adjust) || nextof_prev <= prevof_curr)) {
+            vecof_vecof_pos_ref_alt_tup.push_back(std::vector<std::tuple<int, std::string, std::string, VariantInfo>>());
         }
+        prev_link_n_bases = link_n_bases;
         prev_pos = std::get<0>(pos_ref_alt_begpos_endpos_tuple) + (int)MAX(std::get<1>(pos_ref_alt_begpos_endpos_tuple).size(), std::get<2>(pos_ref_alt_begpos_endpos_tuple).size());
         prev_varlen = varlen;
         nextof_prev = std::get<4>(pos_ref_alt_begpos_endpos_tuple);
@@ -73,7 +111,8 @@ vecof_pos_ref_alt_tup_split(const std::vector<std::tuple<int, std::string, std::
             std::make_tuple(
                 std::get<0>(pos_ref_alt_begpos_endpos_tuple),
                 std::get<1>(pos_ref_alt_begpos_endpos_tuple),
-                std::get<2>(pos_ref_alt_begpos_endpos_tuple)
+                std::get<2>(pos_ref_alt_begpos_endpos_tuple),
+                variantinfo
             )
         );
     }
@@ -131,7 +170,10 @@ void help(int argc, char **argv) {
     fprintf(stderr, " -B maximum number of bases between SNV and SNV to be considered as linked [default to %d].\n", DEFAULT_CB);
     fprintf(stderr, " -O gap opening for the maximum number of bases between InDel and SNV/InDel to be considered as linked [default to %d].\n", DEFAULT_CO);
     fprintf(stderr, " -E gap extension for the maximum number of bases between InDel and SNV/InDel to be considered as linked [default to %d].\n", DEFAULT_CE);
-    
+    fprintf(stderr, " -S boolean flag indicating if short-tandem-repeats (STRs) should be considered in the merging of simple variants [default to false].\n");
+    fprintf(stderr, " -L boolean flag indicating if left-trimming of bases occurring in both REF and ALT should be disabled [default to false].\n");
+    fprintf(stderr, " -R boolean flag indicating if right-trimming of bases occurring in both REF and ALT should be disabled [default to false].\n");
+
     exit(-1);
 }
 
@@ -146,8 +188,10 @@ int main(int argc, char **argv) {
     int defaultCO1 = DEFAULT_CO;
     int defaultCE1 = DEFAULT_CE;
     bool enable_short_tandem_repeat_adjust = false;
+    bool disable_left_trim = false;
+    bool disable_right_trim = false;
     int opt = -1;
-    while ((opt = getopt(argc, argv, "b:d:f:B:O:E:S")) != -1) {
+    while ((opt = getopt(argc, argv, "b:d:f:B:O:E:SLR")) != -1) {
         switch (opt) {
             case 'd': linkdepth1 = atoi(optarg); break;
             case 'f': linkfrac1 = atof(optarg); break;
@@ -156,6 +200,8 @@ int main(int argc, char **argv) {
             case 'O': defaultCO1 = atoi(optarg); break;
             case 'E': defaultCE1 = atoi(optarg); break;
             case 'S': enable_short_tandem_repeat_adjust = true; break;
+            case 'L': disable_left_trim = true; break;
+            case 'R': disable_right_trim = true; break;
             default: help(argc, argv);
         }
     }
@@ -172,6 +218,9 @@ int main(int argc, char **argv) {
     bcf_hdr_t *bcf_hdr = vcf_hdr_read(fp);
     bcf_hdr_append(bcf_hdr, "##INFO=<ID=tcHap,Number=1,Type=String,Description=\"Tumor cHap\">");
     bcf_hdr_append(bcf_hdr, "##INFO=<ID=tPRA,Number=1,Type=String,Description=\"Tumor position_REF_ALT, with the three VCF fields separated by underscore\">");
+    bcf_hdr_append(bcf_hdr, "##INFO=<ID=tDP,Number=1,Type=Integer,Description=\"Tumor total deduped depth (deprecated, please see CDP1f and CDP1r). \">");
+    bcf_hdr_append(bcf_hdr, "##INFO=<ID=tADR,Number=R,Type=Integer,Description=\"Tumor deduped depth of each allele (deprecated, please see cDP1f and cDP1r). \">");
+    bcf_hdr_append(bcf_hdr, "##INFO=<ID=tADRM,Number=R,Type=Integer,Description=\"Tumor deduped depth of each MNV or complex variant by using the maximum depth among the linked SNVs and/or InDels (deprecated, please see cDP1f and cDP1r) (WARNING: use this field with caution because it should not be used under normal circumstances!). \">");
     
     bcf_hdr_t *bcf_hdr2 = bcf_hdr_dup(bcf_hdr);
     // int set_samples_ret = bcf_hdr_set_samples(bcf_hdr, bcf_hdr->samples[bcf_hdr->nsamples_ori - 1], false);
@@ -229,11 +278,12 @@ int main(int argc, char **argv) {
 
         int valsize = 0;
         int ndst_val = 0;
+        int string_valsize = 0;
+        int string_ndst_val = 0;
         char **bcfstring = NULL;
-        // float *bcffloats = NULL;
         int32_t *bcfints = NULL;
         
-        std::map<std::string, std::vector<std::tuple<int, std::string, std::string, int, int>>> map_from_cHap_string_to_vecof_pos_ref_alt_begpos_endpos_tup;
+        std::map<std::string, std::vector<std::tuple<int, std::string, std::string, int, int, VariantInfo>>> map_from_cHap_string_to_vecof_pos_ref_alt_begpos_endpos_tup;
         
         int nsamples = bcf_hdr_nsamples(bcf_hdr); 
         int sampleidx = nsamples - 1; // last sample
@@ -243,20 +293,33 @@ int main(int argc, char **argv) {
             bcf_unpack(line, BCF_UN_ALL);
             ndst_val = 0;
             
-            fprintf(stderr, "Processing the line: tid = %d pos = %d\n", line->rid, line->pos);
-            int32_t *bcf6ints = NULL;
-            valsize = bcf_get_info_int32(bcf_hdr, line, "R3X2", &bcf6ints, &ndst_val);
+            fprintf(stderr, "Processing the line: tid = %d pos = %ld\n", line->rid, line->pos);
+            valsize = bcf_get_info_int32(bcf_hdr, line, "R3X2", &bcfints, &ndst_val);
             if (valsize < 6) { continue; }
-            const int posleft = bcf6ints[0]; // + (bcf6ints[1] * bcf6ints[2]);
-            const int posright = bcf6ints[3] + (bcf6ints[4] * bcf6ints[5]);
+            const int posleft = bcfints[0];
+            const int posright = bcfints[3] + (bcfints[4] * bcfints[5]);
             
-            valsize = bcf_get_format_string(bcf_hdr, line, "cHap", &bcfstring, &ndst_val);
-            if (valsize <= 0) { continue; }
-            const auto pos_ref_alt_begpos_endpos_tup = std::make_tuple(line->pos, std::string(line->d.allele[0]), std::string(line->d.allele[1]), posleft, posright);
+            if (bcfstring) {
+                free(bcfstring[0]);
+                free(bcfstring);
+                bcfstring = NULL;
+                string_ndst_val = 0;
+            }
+            string_valsize = bcf_get_format_string(bcf_hdr, line, "cHap", &bcfstring, &string_ndst_val);
+            assert (1 == string_valsize);
+            valsize = bcf_get_info_int32(bcf_hdr, line, "tbDP", &bcfints, &ndst_val);
+            int tbDP = bcfints[0];
+            valsize = bcf_get_info_int32(bcf_hdr, line, "tDP", &bcfints, &ndst_val);
+            int tDP = bcfints[0];
+            valsize = bcf_get_info_int32(bcf_hdr, line, "tADR", &bcfints, &ndst_val);
+            std::array<int, 2> tADR = std::array<int, 2>({bcfints[0], bcfints[1]});
+            
+            const auto pos_ref_alt_begpos_endpos_tup = std::make_tuple(line->pos, std::string(line->d.allele[0]), std::string(line->d.allele[1]), posleft, posright,
+                    VariantInfo(line->qual, tbDP, tDP, tADR));
             for (int j = sampleidx; j < nsamples; j++) {
                 std::vector<std::string> cHap_substrs = cHapString_to_cHapSubstrs(bcfstring[j]);
                 for (const std::string & cHap_string : cHap_substrs) {
-                    map_from_cHap_string_to_vecof_pos_ref_alt_begpos_endpos_tup.insert(std::make_pair(cHap_string, std::vector<std::tuple<int, std::string, std::string, int, int>>()));
+                    map_from_cHap_string_to_vecof_pos_ref_alt_begpos_endpos_tup.insert(std::make_pair(cHap_string, std::vector<std::tuple<int, std::string, std::string, int, int, VariantInfo>>()));
                     map_from_cHap_string_to_vecof_pos_ref_alt_begpos_endpos_tup[cHap_string].push_back(pos_ref_alt_begpos_endpos_tup);
                 }
             }
@@ -353,6 +416,11 @@ int main(int argc, char **argv) {
                         
                         int complexvar_begpos = INT32_MAX;
                         int complexvar_endpos = 0;
+                        float cv_qual = FLT_MAX;
+                        int tDPmin = 0;
+                        int tDPmax = 0;
+                        std::array<int, 2> tADRmin = {0};
+                        std::array<int, 2> tADRmax = {0};
                         for (auto pos_ref_alt_tup : vecof_pos_ref_alt_tup1) {
                             int pos = std::get<0>(pos_ref_alt_tup);
                             std::string ref = std::get<1>(pos_ref_alt_tup);
@@ -360,6 +428,17 @@ int main(int argc, char **argv) {
                             int endpos = pos + (int)MAX(alt.size(), ref.size());
                             UPDATE_MIN(complexvar_begpos, pos);
                             UPDATE_MAX(complexvar_endpos, endpos);
+                            float qual = std::get<3>(pos_ref_alt_tup).qual;
+                            int tDP = std::get<3>(pos_ref_alt_tup).tDP;
+                            const auto &tADR = std::get<3>(pos_ref_alt_tup).tADR;
+
+                            UPDATE_MIN(tDPmin, tDP);
+                            UPDATE_MAX(tDPmax, tDP);
+                            for (int j = 0; j < 2; j++) {
+                                UPDATE_MIN(tADRmin[j], tADR[j]);
+                                UPDATE_MAX(tADRmax[j], tADR[j]);
+                            }
+                            cv_qual = MIN(qual, cv_qual);
                         }
                         std::string complex_ref = refstring.substr(complexvar_begpos, complexvar_endpos - complexvar_begpos);
                         std::vector<std::string> complex_alt_;
@@ -401,7 +480,7 @@ int main(int argc, char **argv) {
                         int cv_begpos = complexvar_begpos;
                         std::string cv_ref = complex_ref;
                         std::string cv_alt = complex_alt;
-                        if (1) {
+                        if (!disable_left_trim) {
                             size_t begpos_inc = 0;
                             while ((begpos_inc + 1 < cv_ref.size())
                                     && (begpos_inc + 1 < cv_alt.size())
@@ -412,13 +491,24 @@ int main(int argc, char **argv) {
                             cv_ref = cv_ref.substr(begpos_inc);
                             cv_alt = cv_alt.substr(begpos_inc);
                         }
+                        if (!disable_right_trim) {
+                            size_t endpos_dec = 0;
+                            while (cv_ref.size() > (1 + endpos_dec) && cv_alt.size() > (1 + endpos_dec)
+                                    && cv_ref[cv_ref.size() - (1 + endpos_dec)] == cv_alt[cv_alt.size() - (1 + endpos_dec)]) {
+                                endpos_dec++;
+                            }
+                            cv_ref = cv_ref.substr(0, cv_ref.size() - endpos_dec);
+                            cv_alt = cv_alt.substr(0, cv_alt.size() - endpos_dec);
+                        }
                         std::cout << tname << "\t" << (cv_begpos + 1) << "\t.\t" << cv_ref << "\t" << cv_alt 
-                            << "\t.\t.\t" << "tcHap=" << cHap_string 
+                            << "\t" << std::to_string(cv_qual) << "\t.\t" << "tcHap=" << cHap_string 
                             << ";tPRA="
                             << (std::get<0>(pos_ref_alt_tup_from_vcfline)) << "_"
                             << (std::get<1>(pos_ref_alt_tup_from_vcfline)) << "_"
                             << (std::get<2>(pos_ref_alt_tup_from_vcfline))
-                            // << "\tGT\t./1"
+                            << ";tDP =" << tDPmin
+                            << ";tADR =" << other_join(tADRmin, ",")
+                            << ";tADRM =" << other_join(tADRmax, ",")
                             << "\n";
                         for (auto it = complexvar_3tups.begin(); it != complexvar_3tups.end(); ) {
                             int endpos = std::get<0>(*it) + (int)MAX(std::get<1>(*it).size(), std::get<2>(*it).size());
