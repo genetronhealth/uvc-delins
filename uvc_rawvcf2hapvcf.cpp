@@ -171,7 +171,7 @@ void help(int argc, char **argv) {
     fprintf(stderr, " -S boolean flag indicating if short-tandem-repeats (STRs) should be considered in the merging of simple variants [default to false].\n");
     fprintf(stderr, " -L boolean flag indicating if left-trimming of bases occurring in both REF and ALT should be disabled [default to false].\n");
     fprintf(stderr, " -R boolean flag indicating if right-trimming of bases occurring in both REF and ALT should be disabled [default to false].\n");
-
+    
     exit(-1);
 }
 
@@ -189,7 +189,7 @@ int main(int argc, char **argv) {
     bool disable_left_trim = false;
     bool disable_right_trim = false;
     int opt = -1;
-    while ((opt = getopt(argc, argv, "b:d:f:B:O:E:SLR")) != -1) {
+    while ((opt = getopt(argc, argv, "b:d:f:B:O:E:S:T:LR")) != -1) {
         switch (opt) {
             case 'd': linkdepth1 = atoi(optarg); break;
             case 'f': linkfrac1 = atof(optarg); break;
@@ -217,8 +217,10 @@ int main(int argc, char **argv) {
     bcf_hdr_append(bcf_hdr, "##INFO=<ID=tcHap,Number=1,Type=String,Description=\"Tumor cHap\">");
     bcf_hdr_append(bcf_hdr, "##INFO=<ID=tPRA,Number=1,Type=String,Description=\"Tumor position_REF_ALT, with the three VCF fields separated by underscore\">");
     bcf_hdr_append(bcf_hdr, "##INFO=<ID=tDP,Number=1,Type=Integer,Description=\"Tumor total deduped depth (deprecated, please see CDP1f and CDP1r). \">");
-    bcf_hdr_append(bcf_hdr, "##INFO=<ID=tADR,Number=R,Type=Integer,Description=\"Tumor deduped depth of each allele (deprecated, please see cDP1f and cDP1r). \">");
+    bcf_hdr_append(bcf_hdr, "##INFO=<ID=tADA,Number=A,Type=Integer,Description=\"Tumor total deduped depth of each MNV or complex variant. \">");
+    bcf_hdr_append(bcf_hdr, "##INFO=<ID=tADRm,Number=R,Type=Integer,Description=\"Tumor deduped depth of each MNV or complex variant by using the minimum depth among the linked SNVs and/or InDels. \">");
     bcf_hdr_append(bcf_hdr, "##INFO=<ID=tADRM,Number=R,Type=Integer,Description=\"Tumor deduped depth of each MNV or complex variant by using the maximum depth among the linked SNVs and/or InDels (deprecated, please see cDP1f and cDP1r) (WARNING: use this field with caution because it should not be used under normal circumstances!). \">");
+    bcf_hdr_append(bcf_hdr, "##INFO=<ID=tAD2F,Number=A,Type=Integer,Description=\"Percentage (100x) of reads that support the complex variant among the decomposed non-complex variants. \">");
     
     bcf_hdr_t *bcf_hdr2 = bcf_hdr_dup(bcf_hdr);
     // int set_samples_ret = bcf_hdr_set_samples(bcf_hdr, bcf_hdr->samples[bcf_hdr->nsamples_ori - 1], false);
@@ -314,6 +316,7 @@ int main(int argc, char **argv) {
             
             const auto pos_ref_alt_begpos_endpos_tup = std::make_tuple(line->pos, std::string(line->d.allele[0]), std::string(line->d.allele[1]), posleft, posright,
                     VariantInfo(line->qual, tbDP, tDP, tADR));
+            assert (tDP > 0 || !fprintf(stderr, "%d > 0 failed for rid - %d pos - %d ref - %s alt - %s!\n", line->rid, line->pos, line->d.allele[0], line->d.allele[1]));
             for (int j = sampleidx; j < nsamples; j++) {
                 std::vector<std::string> cHap_substrs = cHapString_to_cHapSubstrs(bcfstring[j]);
                 for (const std::string & cHap_string : cHap_substrs) {
@@ -415,9 +418,9 @@ int main(int argc, char **argv) {
                         int complexvar_begpos = INT32_MAX;
                         int complexvar_endpos = 0;
                         float cv_qual = FLT_MAX;
-                        int tDPmin = 0;
+                        int tDPmin = INT_MAX;
                         int tDPmax = 0;
-                        std::array<int, 2> tADRmin = {0};
+                        std::array<int, 2> tADRmin = {INT_MAX, INT_MAX};
                         std::array<int, 2> tADRmax = {0};
                         for (auto pos_ref_alt_tup : vecof_pos_ref_alt_tup1) {
                             int pos = std::get<0>(pos_ref_alt_tup);
@@ -505,8 +508,10 @@ int main(int argc, char **argv) {
                             << (std::get<1>(pos_ref_alt_tup_from_vcfline)) << "_"
                             << (std::get<2>(pos_ref_alt_tup_from_vcfline))
                             << ";tDP=" << tDPmin
-                            << ";tADR=" << other_join(tADRmin, ",")
+                            << ";tADA=" << complexvarDP
+                            << ";tADRm=" << other_join(tADRmin, ",")
                             << ";tADRM=" << other_join(tADRmax, ",")
+                            << ";tAD2F=" << (tADRmin[1] * 100 / MAX(1, tADRmax[1]))
                             << "\n";
                         for (auto it = complexvar_3tups.begin(); it != complexvar_3tups.end(); ) {
                             int endpos = std::get<0>(*it) + (int)MAX(std::get<1>(*it).size(), std::get<2>(*it).size());
