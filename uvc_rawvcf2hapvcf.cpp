@@ -316,7 +316,7 @@ int main(int argc, char **argv) {
                 bcfstring = NULL;
                 string_ndst_val = 0;
             }
-            string_valsize = bcf_get_format_string(bcf_hdr, line, defaultH1, &bcfstring, &string_ndst_val);
+            string_valsize = bcf_get_format_string(bcf_hdr, line, defaultH1.c_str(), &bcfstring, &string_ndst_val);
             assert (1 <= string_valsize || !fprintf(stderr, "The size of cHap is %d instead of at least 1!\n", string_valsize));
             valsize = bcf_get_info_int32(bcf_hdr, line, "tbDP", &bcfints, &ndst_val);
             int tbDP = bcfints[0];
@@ -397,7 +397,7 @@ int main(int argc, char **argv) {
             }
             
             ndst_val = 0;
-            valsize = bcf_get_format_string(bcf_hdr, line, defaultH1, &bcfstring, &ndst_val);
+            valsize = bcf_get_format_string(bcf_hdr, line, defaultH1.c_str(), &bcfstring, &ndst_val);
             if (valsize <= 0) { continue; }
             ndst_val = 0;
             valsize = bcf_get_format_int32(bcf_hdr, line, "AD", &bcfints, &ndst_val);
