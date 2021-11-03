@@ -15,6 +15,7 @@
 #include <htslib/vcf.h>
 #include <htslib/synced_bcf_reader.h>
 
+#include <math.h>
 #include <unistd.h>
 
 const auto MIN(const auto a, const auto b) { return ((a) < (b) ? (a) : (b)); }
@@ -150,10 +151,12 @@ std::map<std::string, int> build_tname2tid_from_faidx(const faidx_t *faidx) {
 
 const int DEFAULT_D = 3;
 const double DEFAULT_F = 0.1 + 1e-6;
+const std::string DEFAULT_H = "cHap";
 const int DEFAULT_CB = 4; // SNV to SNV
 const int DEFAULT_CO = 6; // (SNV to InDel gap-open) and (InDel to InDel gap-open)
 const int DEFAULT_CE = 1; // (SNV to InDel gap-ext ) and (InDel to InDel gap-ext )
 // const int DEFAULT_CR = 10;   // (SNV to InDel repeat-decrease) and (InDel to InDel repeat-decrease)
+const double  POWLAW_EXPONENT = 3.0;
 
 void help(int argc, char **argv) {
     fprintf(stderr, "Program %s version %s ( %s )\n", argv[0], COMMIT_VERSION, COMMIT_DIFF_SH);
@@ -163,6 +166,8 @@ void help(int argc, char **argv) {
     fprintf(stderr, "Optional parameters:\n");
     fprintf(stderr, " -d minimum allele depth of the linked variants [default to %d].\n", DEFAULT_D);
     fprintf(stderr, " -f minimum fraction of the linked variants [default to %f].\n", DEFAULT_F);
+    fprintf(stderr, " -h FORMAT tag in the UVC-VCF-GZ file used to contain the haplotype information [default to %s].\n", DEFAULT_H.c_str());
+    fprintf(stderr, " -p the power-law exponent for computing tumor haplotype variant qualities [default to %f].\n", POWLAW_EXPONENT);    
     fprintf(stderr, " -B maximum number of bases between SNV and SNV to be considered as linked [default to %d].\n", DEFAULT_CB);
     fprintf(stderr, " -O gap opening for the maximum number of bases between InDel and SNV/InDel to be considered as linked [default to %d].\n", DEFAULT_CO);
     fprintf(stderr, " -E gap extension for the maximum number of bases between InDel and SNV/InDel to be considered as linked [default to %d].\n", DEFAULT_CE);
@@ -180,8 +185,10 @@ int main(int argc, char **argv) {
     char *fastaref = NULL;
     char *uvcvcf = NULL;
     char *bedfile = NULL;
+    double powlaw_exponent = POWLAW_EXPONENT;
     int linkdepth1 = DEFAULT_D;
     double linkfrac1 = DEFAULT_F;
+    std::string defaultH1 = DEFAULT_H;
     int defaultCB1 = DEFAULT_CB;
     int defaultCO1 = DEFAULT_CO;
     int defaultCE1 = DEFAULT_CE;
@@ -189,10 +196,12 @@ int main(int argc, char **argv) {
     bool disable_left_trim = false;
     bool disable_right_trim = false;
     int opt = -1;
-    while ((opt = getopt(argc, argv, "b:d:f:B:O:E:S:T:LR")) != -1) {
+    while ((opt = getopt(argc, argv, "b:d:f:p:B:O:E:S:T:LR")) != -1) {
         switch (opt) {
             case 'd': linkdepth1 = atoi(optarg); break;
             case 'f': linkfrac1 = atof(optarg); break;
+            case 'h': defaultH1 = optarg; break;
+            case 'p': powlaw_exponent = atof(optarg); break;
             case 'T': bedfile = optarg; break;
             case 'B': defaultCB1 = atoi(optarg); break;
             case 'O': defaultCO1 = atoi(optarg); break;
@@ -214,13 +223,15 @@ int main(int argc, char **argv) {
     faidx_t *faidx = fai_load(fastaref);
     htsFile *fp = vcf_open(uvcvcf, "r");
     bcf_hdr_t *bcf_hdr = vcf_hdr_read(fp);
-    bcf_hdr_append(bcf_hdr, "##INFO=<ID=tcHap,Number=1,Type=String,Description=\"Tumor cHap\">");
+    bcf_hdr_append(bcf_hdr, "##INFO=<ID=tHap,Number=1,Type=String,Description=\"Tumor [x]Hap where [x] can be b, c, or c2.\">");
     bcf_hdr_append(bcf_hdr, "##INFO=<ID=tPRA,Number=1,Type=String,Description=\"Tumor position_REF_ALT, with the three VCF fields separated by underscore\">");
-    bcf_hdr_append(bcf_hdr, "##INFO=<ID=tDP,Number=1,Type=Integer,Description=\"Tumor total deduped depth (deprecated, please see CDP1f and CDP1r). \">");
+    bcf_hdr_append(bcf_hdr, "##INFO=<ID=tDPm,Number=1,Type=Integer,Description=\"Tumor total deduped depth (deprecated, please see CDP1f and CDP1r) taken as the minimum of the decomposed SNV-InDel alleles. \">");
+    bcf_hdr_append(bcf_hdr, "##INFO=<ID=tDPM,Number=1,Type=Integer,Description=\"Tumor total deduped depth (deprecated, please see CDP1f and CDP1r) taken as the maximum of the decomposed SNV-InDel alleles. \">");
     bcf_hdr_append(bcf_hdr, "##INFO=<ID=tADA,Number=A,Type=Integer,Description=\"Tumor total deduped depth of each MNV or complex variant. \">");
     bcf_hdr_append(bcf_hdr, "##INFO=<ID=tADRm,Number=R,Type=Integer,Description=\"Tumor deduped depth of each MNV or complex variant by using the minimum depth among the linked SNVs and/or InDels. \">");
     bcf_hdr_append(bcf_hdr, "##INFO=<ID=tADRM,Number=R,Type=Integer,Description=\"Tumor deduped depth of each MNV or complex variant by using the maximum depth among the linked SNVs and/or InDels (deprecated, please see cDP1f and cDP1r) (WARNING: use this field with caution because it should not be used under normal circumstances!). \">");
     bcf_hdr_append(bcf_hdr, "##INFO=<ID=tAD2F,Number=A,Type=Integer,Description=\"Percentage (100x) of reads that support the complex variant among the decomposed non-complex variants. \">");
+    bcf_hdr_append(bcf_hdr, "##INFO=<ID=tHVQ,Number=A,Type=Integer,Description=\"Haplotype (non-SNV and non-InDel small) variant Quality. \">");
     
     bcf_hdr_t *bcf_hdr2 = bcf_hdr_dup(bcf_hdr);
     // int set_samples_ret = bcf_hdr_set_samples(bcf_hdr, bcf_hdr->samples[bcf_hdr->nsamples_ori - 1], false);
@@ -305,7 +316,7 @@ int main(int argc, char **argv) {
                 bcfstring = NULL;
                 string_ndst_val = 0;
             }
-            string_valsize = bcf_get_format_string(bcf_hdr, line, "cHap", &bcfstring, &string_ndst_val);
+            string_valsize = bcf_get_format_string(bcf_hdr, line, defaultH1, &bcfstring, &string_ndst_val);
             assert (1 <= string_valsize || !fprintf(stderr, "The size of cHap is %d instead of at least 1!\n", string_valsize));
             valsize = bcf_get_info_int32(bcf_hdr, line, "tbDP", &bcfints, &ndst_val);
             int tbDP = bcfints[0];
@@ -316,7 +327,7 @@ int main(int argc, char **argv) {
             
             const auto pos_ref_alt_begpos_endpos_tup = std::make_tuple(line->pos, std::string(line->d.allele[0]), std::string(line->d.allele[1]), posleft, posright,
                     VariantInfo(line->qual, tbDP, tDP, tADR));
-            assert (tDP > 0 || !fprintf(stderr, "%d > 0 failed for rid - %d pos - %d ref - %s alt - %s!\n", line->rid, line->pos, line->d.allele[0], line->d.allele[1]));
+            assert (tDP > 0 || !fprintf(stderr, "%d > 0 failed for rid - %d pos - %ld ref - %s alt - %s!\n", tDP, line->rid, line->pos, line->d.allele[0], line->d.allele[1]));
             for (int j = sampleidx; j < nsamples; j++) {
                 std::vector<std::string> cHap_substrs = cHapString_to_cHapSubstrs(bcfstring[j]);
                 for (const std::string & cHap_string : cHap_substrs) {
@@ -330,22 +341,16 @@ int main(int argc, char **argv) {
         std::cerr << "Will finish processing tname " << tname << "\n";
         std::set<std::tuple<int, std::string, std::string>> complexvar_3tups;
         while (bcf_sr_next_line(sr)) {
-            bcf1_t *line = bcf_sr_get_line(sr, 0);
-            bcf_unpack(line, BCF_UN_ALL);
-            ndst_val = 0;
-            valsize = bcf_get_format_string(bcf_hdr, line, "cHap", &bcfstring, &ndst_val);
-            if (valsize <= 0) { continue; }
-            ndst_val = 0;
-            valsize = bcf_get_format_int32(bcf_hdr, line, "AD", &bcfints, &ndst_val);
-            if (valsize <= 0) { continue; }
-            const int vcflineAD = bcfints[ndst_val - 1];
-            const auto pos_ref_alt_tup_from_vcfline = std::make_tuple(line->pos, std::string(line->d.allele[0]), std::string(line->d.allele[1]));
-
+           
             int linkdepth = linkdepth1;
             int linkfrac = linkfrac1;
             int defaultCB = defaultCB1;
             int defaultCO = defaultCO1;
             int defaultCE = defaultCE1;
+            
+            bcf1_t *line = bcf_sr_get_line(sr, 0);
+            bcf_unpack(line, BCF_UN_ALL); 
+
             if (bedfile != NULL && bedstream.good()) {
                 int vcftid = line->rid;
                 int vcfbeg = line->pos;
@@ -391,6 +396,15 @@ int main(int argc, char **argv) {
                 }
             }
             
+            ndst_val = 0;
+            valsize = bcf_get_format_string(bcf_hdr, line, defaultH1, &bcfstring, &ndst_val);
+            if (valsize <= 0) { continue; }
+            ndst_val = 0;
+            valsize = bcf_get_format_int32(bcf_hdr, line, "AD", &bcfints, &ndst_val);
+            if (valsize <= 0) { continue; }
+            const int vcflineAD = bcfints[ndst_val - 1];
+            const auto pos_ref_alt_tup_from_vcfline = std::make_tuple(line->pos, std::string(line->d.allele[0]), std::string(line->d.allele[1]));
+            
             for (int j = sampleidx; j < nsamples; j++) {
                 std::vector<std::string> cHap_substrs = cHapString_to_cHapSubstrs(bcfstring[j]);
                 for (std::string cHap_string : cHap_substrs) {
@@ -410,11 +424,12 @@ int main(int argc, char **argv) {
                     const auto vecof_vecof_pos_ref_alt_tup = vecof_pos_ref_alt_tup_split(vecof_pos_ref_alt_begpos_endpos_tup,
                         defaultCB, defaultCO, defaultCE, enable_short_tandem_repeat_adjust);
                     for (const auto & vecof_pos_ref_alt_tup1 : vecof_vecof_pos_ref_alt_tup) {
+                        
                         if (vecof_pos_ref_alt_tup1.size() <= 1) { 
                             // fprintf(stderr, "Skipping the variant %s %d because it is not complex\n", tname, line->pos);
                             continue; // this variant is not complex
                         }
-                        
+                        double errmodel_complexvarfrac_phred = 0.0;
                         int complexvar_begpos = INT32_MAX;
                         int complexvar_endpos = 0;
                         float cv_qual = FLT_MAX;
@@ -432,15 +447,21 @@ int main(int argc, char **argv) {
                             float qual = std::get<3>(pos_ref_alt_tup).qual;
                             int tDP = std::get<3>(pos_ref_alt_tup).tDP;
                             const auto &tADR = std::get<3>(pos_ref_alt_tup).tADR;
-
+                            
                             UPDATE_MIN(tDPmin, tDP);
                             UPDATE_MAX(tDPmax, tDP);
                             for (int j = 0; j < 2; j++) {
                                 UPDATE_MIN(tADRmin[j], tADR[j]);
                                 UPDATE_MAX(tADRmax[j], tADR[j]);
+                                assert (tADR[1] <= tDP);
+                                assert (complexvarDP <= tADR[1]);
                             }
+                            errmodel_complexvarfrac_phred += 10.0 / log(10.0) * log((double)(tADR[1] - complexvarDP + 0.5) / (double)(tDP + 1.0));
                             cv_qual = MIN(qual, cv_qual);
                         }
+                        double complexvarfrac = (double)(complexvarDP + 0.5) / (double)(tDPmax + 1.0);
+                        double complexvarfrac_ratio_phred = 10.0 / log(10.0) * log(complexvarfrac) - errmodel_complexvarfrac_phred;
+                        
                         std::string complex_ref = refstring.substr(complexvar_begpos, complexvar_endpos - complexvar_begpos);
                         std::vector<std::string> complex_alt_;
                         for (const auto base : complex_ref) {
@@ -502,16 +523,18 @@ int main(int argc, char **argv) {
                             cv_alt = cv_alt.substr(0, cv_alt.size() - endpos_dec);
                         }
                         std::cout << tname << "\t" << (cv_begpos + 1) << "\t.\t" << cv_ref << "\t" << cv_alt 
-                            << "\t" << std::to_string(cv_qual) << "\t.\t" << "tcHap=" << cHap_string 
+                            << "\t" << std::to_string(cv_qual) << "\t.\t" << "tHap=" << cHap_string 
                             << ";tPRA="
                             << (std::get<0>(pos_ref_alt_tup_from_vcfline)) << "_"
                             << (std::get<1>(pos_ref_alt_tup_from_vcfline)) << "_"
                             << (std::get<2>(pos_ref_alt_tup_from_vcfline))
-                            << ";tDP=" << tDPmin
+                            << ";tDPm=" << tDPmin
+                            << ";tDPM=" << tDPmax
                             << ";tADA=" << complexvarDP
                             << ";tADRm=" << other_join(tADRmin, ",")
                             << ";tADRM=" << other_join(tADRmax, ",")
                             << ";tAD2F=" << (tADRmin[1] * 100 / MAX(1, tADRmax[1]))
+                            << ";tHVQ=" << (powlaw_exponent * complexvarfrac_ratio_phred)
                             << "\n";
                         for (auto it = complexvar_3tups.begin(); it != complexvar_3tups.end(); ) {
                             int endpos = std::get<0>(*it) + (int)MAX(std::get<1>(*it).size(), std::get<2>(*it).size());
