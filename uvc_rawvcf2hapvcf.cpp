@@ -182,6 +182,11 @@ void help(int argc, char **argv) {
 
 int main(int argc, char **argv) {
     
+    time_t rawtime;
+    time(&rawtime);
+    char timestring[80];
+    strftime(timestring, 80, "%F %T", localtime(&rawtime));
+
     char *fastaref = NULL;
     char *uvcvcf = NULL;
     char *bedfile = NULL;
@@ -223,6 +228,14 @@ int main(int argc, char **argv) {
     faidx_t *faidx = fai_load(fastaref);
     htsFile *fp = vcf_open(uvcvcf, "r");
     bcf_hdr_t *bcf_hdr = vcf_hdr_read(fp);
+    bcf_hdr_append(bcf_hdr, (std::string("##complexVariantDate=") + timestring).c_str());
+    bcf_hdr_append(bcf_hdr, "##complexVariantCallerVersion=" COMMIT_VERSION "(" COMMIT_DIFF_SH ")");
+    std::string vcfcmd = "##complexVariantCallerCommand=";
+    for (int i = 0; i < argc; i++) {
+        vcfcmd += std::string("") + std::string(argv[i]) + "  ";
+    }
+    bcf_hdr_append(bcf_hdr, vcfcmd.c_str());
+
     bcf_hdr_append(bcf_hdr, "##INFO=<ID=tHap,Number=1,Type=String,Description=\"Tumor [x]Hap where [x] can be b, c, or c2.\">");
     bcf_hdr_append(bcf_hdr, "##INFO=<ID=tPRA,Number=1,Type=String,Description=\"Tumor position_REF_ALT, with the three VCF fields separated by underscore\">");
     bcf_hdr_append(bcf_hdr, "##INFO=<ID=tDPm,Number=1,Type=Integer,Description=\"Tumor total deduped depth (deprecated, please see CDP1f and CDP1r) taken as the minimum of the decomposed SNV-InDel alleles. \">");
