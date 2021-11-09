@@ -16,3 +16,6 @@ uvc-rawvcf2hapvcf : uvc_rawvcf2hapvcf.cpp Makefile
 .PHONY clean: 
 	rm uvc-rawvcf2hapvcf uvc-rawvcf2hapvcf.debug
 
+.PHONY deploy:
+	cp uvc-rawvcf2hapvcf uvc-rawvcf2hapvcf.debug bin/
+
