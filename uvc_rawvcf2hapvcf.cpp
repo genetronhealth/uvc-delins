@@ -149,9 +149,12 @@ std::map<std::string, int> build_tname2tid_from_faidx(const faidx_t *faidx) {
     return ret;
 }
 
+const double DEFAULT_C = 0.75;
 const int DEFAULT_D = 3;
 const double DEFAULT_F = 0.1 + 1e-6;
-const std::string DEFAULT_H = "cHap";
+const char *DEFAULT_H = "cHap"; // bHap, cHap, c2Hap
+const char *DEFAULT_A = "AD";   // bAD,  AD,   c2AD
+const char *DEFAULT_M = "w";
 const int DEFAULT_CB = 4; // SNV to SNV
 const int DEFAULT_CO = 6; // (SNV to InDel gap-open) and (InDel to InDel gap-open)
 const int DEFAULT_CE = 1; // (SNV to InDel gap-ext ) and (InDel to InDel gap-ext )
@@ -164,18 +167,25 @@ void help(int argc, char **argv) {
     
     fprintf(stderr, "Usage: %s <REFERENCE-FASTA> <UVC-VCF-GZ> \n", argv[0]);
     fprintf(stderr, "Optional parameters:\n");
+    
+    fprintf(stderr, " -c the fraction of simple-variant depth used to construct the complex variant with the highest depth, above which the simple variant is discarded in -D [default to %f].\n", DEFAULT_C);
     fprintf(stderr, " -d minimum allele depth of the linked variants [default to %d].\n", DEFAULT_D);
     fprintf(stderr, " -f minimum fraction of the linked variants [default to %f].\n", DEFAULT_F);
-    fprintf(stderr, " -h FORMAT tag in the UVC-VCF-GZ file used to contain the haplotype information [default to %s].\n", DEFAULT_H.c_str());
     fprintf(stderr, " -p the power-law exponent for computing tumor haplotype variant qualities [default to %f].\n", POWLAW_EXPONENT);    
-    fprintf(stderr, " -B maximum number of bases between SNV and SNV to be considered as linked [default to %d].\n", DEFAULT_CB);
-    fprintf(stderr, " -O gap opening for the maximum number of bases between InDel and SNV/InDel to be considered as linked [default to %d].\n", DEFAULT_CO);
-    fprintf(stderr, " -E gap extension for the maximum number of bases between InDel and SNV/InDel to be considered as linked [default to %d].\n", DEFAULT_CE);
-    fprintf(stderr, " -T bed file that overrides the -d, -f, -B -O, and -E parameters in the defined regions [default to None].\n");
     
-    fprintf(stderr, " -S boolean flag indicating if short-tandem-repeats (STRs) should be considered in the merging of simple variants [default to false].\n");
+    fprintf(stderr, " -A FORMAT tag in the UVC-VCF-GZ file indicating allele depths. "
+            "The 2 values bAD/AD/c2AD at -A correspond to bHap/cHap/c2Hap at -H. [default to %s].\n", DEFAULT_A);
+    fprintf(stderr, " -B from BWA: maximum number of bases between SNV and SNV to be considered as linked [default to %d].\n", DEFAULT_CB);
+    fprintf(stderr, " -C the VCF file containing simple variants discarded by constructing complex variants [default to NULL, generating no output].\n");
+    fprintf(stderr, " -E from BWA: gap extension for the maximum number of bases between InDel and SNV/InDel to be considered as linked [default to %d].\n", DEFAULT_CE);
+    fprintf(stderr, " -H FORMAT tag in the UVC-VCF-GZ file used to contain the haplotype information [default to %s].\n", DEFAULT_H);
+    fprintf(stderr, " -M mode for the output VCF file containing simple variants that are entirely parts of some complex variant [default to %s].\n", DEFAULT_M);
+    fprintf(stderr, " -O from BWA: gap opening for the maximum number of bases between InDel and SNV/InDel to be considered as linked [default to %d].\n", DEFAULT_CO);
+    fprintf(stderr, " -T the bed file that overrides the -d, -f, -B -O, and -E parameters in the defined regions [default to None].\n");
+    
     fprintf(stderr, " -L boolean flag indicating if left-trimming of bases occurring in both REF and ALT should be disabled [default to false].\n");
     fprintf(stderr, " -R boolean flag indicating if right-trimming of bases occurring in both REF and ALT should be disabled [default to false].\n");
+    fprintf(stderr, " -S boolean flag indicating if short-tandem-repeats (STRs) should be considered in the merging of simple variants [default to false].\n");
     
     exit(-1);
 }
@@ -189,31 +199,44 @@ int main(int argc, char **argv) {
 
     char *fastaref = NULL;
     char *uvcvcf = NULL;
+    
     char *bedfile = NULL;
     double powlaw_exponent = POWLAW_EXPONENT;
+    double defaultC = DEFAULT_C;
     int linkdepth1 = DEFAULT_D;
     double linkfrac1 = DEFAULT_F;
-    std::string defaultH1 = DEFAULT_H;
     int defaultCB1 = DEFAULT_CB;
     int defaultCO1 = DEFAULT_CO;
     int defaultCE1 = DEFAULT_CE;
     bool enable_short_tandem_repeat_adjust = false;
     bool disable_left_trim = false;
     bool disable_right_trim = false;
+    const char *defaultH1 = DEFAULT_H;
+    const char *defaultAD = DEFAULT_A; // bAD, AD, c2AD for bHap, cHap, and c2Hap
+    const char *simple_outvcfname = NULL;
+    const char *defaultMode = DEFAULT_M;
     int opt = -1;
-    while ((opt = getopt(argc, argv, "b:d:f:p:B:O:E:S:T:LR")) != -1) {
+    while ((opt = getopt(argc, argv, "c:d:f:p:A:B:E:H:O:R:T:LRS")) != -1) {
         switch (opt) {
+            case 'c': defaultC = atof(optarg); break; // complex2simple_var_frac_above_which_discard_simple 
             case 'd': linkdepth1 = atoi(optarg); break;
             case 'f': linkfrac1 = atof(optarg); break;
-            case 'h': defaultH1 = optarg; break;
             case 'p': powlaw_exponent = atof(optarg); break;
-            case 'T': bedfile = optarg; break;
+            
+            case 'A': defaultAD = optarg; ; break;            
             case 'B': defaultCB1 = atoi(optarg); break;
-            case 'O': defaultCO1 = atoi(optarg); break;
+            case 'C': simple_outvcfname = optarg; break;
+            
             case 'E': defaultCE1 = atoi(optarg); break;
-            case 'S': enable_short_tandem_repeat_adjust = true; break;
+            case 'M': defaultMode = optarg; break;
+            case 'H': defaultH1 = optarg; break;
+            case 'O': defaultCO1 = atoi(optarg); break;
+            case 'T': bedfile = optarg; break;
+            
             case 'L': disable_left_trim = true; break;
             case 'R': disable_right_trim = true; break;
+            case 'S': enable_short_tandem_repeat_adjust = true; break;
+            
             default: help(argc, argv);
         }
     }
@@ -256,6 +279,7 @@ int main(int argc, char **argv) {
     bcf_hdr_destroy(bcf_hdr2);
     // int set_samples_ret2 = bcf_hdr_set_samples(bcf_hdr, "-", false);
     // assert(0 == set_samples_ret2);
+    htsFile *simple_outvcf = vcf_open(simple_outvcfname, defaultMode);
     
     int vcf_nseqs = -1;
     const char **seqnames = bcf_hdr_seqnames(bcf_hdr, &vcf_nseqs);
@@ -329,7 +353,7 @@ int main(int argc, char **argv) {
                 bcfstring = NULL;
                 string_ndst_val = 0;
             }
-            string_valsize = bcf_get_format_string(bcf_hdr, line, defaultH1.c_str(), &bcfstring, &string_ndst_val);
+            string_valsize = bcf_get_format_string(bcf_hdr, line, defaultH1, &bcfstring, &string_ndst_val);
             assert (1 <= string_valsize || !fprintf(stderr, "The size of cHap is %d instead of at least 1!\n", string_valsize));
             valsize = bcf_get_info_int32(bcf_hdr, line, "tbDP", &bcfints, &ndst_val);
             int tbDP = bcfints[0];
@@ -360,6 +384,7 @@ int main(int argc, char **argv) {
             int defaultCB = defaultCB1;
             int defaultCO = defaultCO1;
             int defaultCE = defaultCE1;
+            double complex2simple_var_frac_above_which_discard_simple = defaultC;
             
             bcf1_t *line = bcf_sr_get_line(sr, 0);
             bcf_unpack(line, BCF_UN_ALL); 
@@ -384,6 +409,10 @@ int main(int argc, char **argv) {
                         std::string token;
                         while (linestream.good()) {
                             linestream >> token;
+                            if (!token.compare("-c")) {
+                                linestream >> token;
+                                complex2simple_var_frac_above_which_discard_simple = atof(token.c_str());
+                            }
                             if (!token.compare("-d")) {
                                 linestream >> token;
                                 linkdepth = atoi(token.c_str());
@@ -410,18 +439,20 @@ int main(int argc, char **argv) {
             }
             
             ndst_val = 0;
-            valsize = bcf_get_format_string(bcf_hdr, line, defaultH1.c_str(), &bcfstring, &ndst_val);
+            valsize = bcf_get_format_string(bcf_hdr, line, defaultH1, &bcfstring, &ndst_val);
             if (valsize <= 0) { continue; }
             ndst_val = 0;
-            valsize = bcf_get_format_int32(bcf_hdr, line, "AD", &bcfints, &ndst_val);
-            if (valsize <= 0) { continue; }
-            const int vcflineAD = bcfints[ndst_val - 1];
+            valsize = bcf_get_format_int32(bcf_hdr, line, defaultAD, &bcfints, &ndst_val);
+            if (valsize <= 0) { continue; } 
+            int vcflineAD = bcfints[ndst_val - 1];
             const auto pos_ref_alt_tup_from_vcfline = std::make_tuple(line->pos, std::string(line->d.allele[0]), std::string(line->d.allele[1]));
             
             for (int j = sampleidx; j < nsamples; j++) {
+                int max_complexvarDP = 0;
                 std::vector<std::string> cHap_substrs = cHapString_to_cHapSubstrs(bcfstring[j]);
                 for (std::string cHap_string : cHap_substrs) {
                     int complexvarDP = cHapSubstr_to_totDP(cHap_string);
+                    UPDATE_MAX(max_complexvarDP, complexvarDP);
                     if (complexvarDP < linkdepth || complexvarDP < linkfrac * vcflineAD) {
                         // fprintf(stderr, "Skipping the variant %s %d because it has low DP\n", tname, line->pos);
                         continue; // this variant has low DP
@@ -560,12 +591,20 @@ int main(int argc, char **argv) {
                         complexvar_3tups.insert(complexvar_3tup);
                     }
                 }
+                if ((max_complexvarDP > vcflineAD * complex2simple_var_frac_above_which_discard_simple) && (simple_outvcf != NULL)) { 
+                    // is mostly part of a complex variant
+                    int vcf_write_ret = vcf_write(simple_outvcf, bcf_hdr, line);
+                    assert(vcf_write_ret > 0);
+                }
             }
         }
         bcf_sr_destroy(sr);
     }
     if (NULL != bedfile) { 
         bedstream.close(); 
+    }
+    if (NULL != simple_outvcf) {
+        vcf_close(simple_outvcf);
     }
     bcf_hdr_destroy(bcf_hdr);
     vcf_close(fp);
