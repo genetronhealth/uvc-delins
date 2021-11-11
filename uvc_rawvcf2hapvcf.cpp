@@ -163,12 +163,12 @@ const double  POWLAW_EXPONENT = 3.0;
 
 void help(int argc, char **argv) {
     fprintf(stderr, "Program %s version %s ( %s )\n", argv[0], COMMIT_VERSION, COMMIT_DIFF_SH);
-    fprintf(stderr, "  This program combines simple variants into complex variants. \n");
+    fprintf(stderr, "  This program combines simple variants into delins variants. \n");
     
     fprintf(stderr, "Usage: %s <REFERENCE-FASTA> <UVC-VCF-GZ> \n", argv[0]);
     fprintf(stderr, "Optional parameters:\n");
     
-    fprintf(stderr, " -c the fraction of simple-variant depth used to construct the complex variant with the highest depth, above which the simple variant is discarded in -D [default to %f].\n", DEFAULT_C);
+    fprintf(stderr, " -c the fraction of simple-variant depth used to construct the delins variant with the highest depth, above which the simple variant is discarded in -D [default to %f].\n", DEFAULT_C);
     fprintf(stderr, " -d minimum allele depth of the linked variants [default to %d].\n", DEFAULT_D);
     fprintf(stderr, " -f minimum fraction of the linked variants [default to %f].\n", DEFAULT_F);
     fprintf(stderr, " -p the power-law exponent for computing tumor haplotype variant qualities [default to %f].\n", POWLAW_EXPONENT);    
@@ -176,13 +176,14 @@ void help(int argc, char **argv) {
     fprintf(stderr, " -A FORMAT tag in the UVC-VCF-GZ file indicating allele depths. "
             "The 2 values bAD/AD/c2AD at -A correspond to bHap/cHap/c2Hap at -H. [default to %s].\n", DEFAULT_A);
     fprintf(stderr, " -B from BWA: maximum number of bases between SNV and SNV to be considered as linked [default to %d].\n", DEFAULT_CB);
-    fprintf(stderr, " -C the VCF file containing simple variants discarded by constructing complex variants [default to NULL, generating no output].\n");
+    fprintf(stderr, " -C the VCF file containing simple variants discarded by constructing delins variants [default to NULL, generating no output].\n");
     fprintf(stderr, " -E from BWA: gap extension for the maximum number of bases between InDel and SNV/InDel to be considered as linked [default to %d].\n", DEFAULT_CE);
     fprintf(stderr, " -H FORMAT tag in the UVC-VCF-GZ file used to contain the haplotype information [default to %s].\n", DEFAULT_H);
-    fprintf(stderr, " -M mode for the output VCF file containing simple variants that are entirely parts of some complex variant [default to %s].\n", DEFAULT_M);
+    fprintf(stderr, " -M mode for the output VCF file containing simple variants that are entirely parts of some delins variant [default to %s].\n", DEFAULT_M);
     fprintf(stderr, " -O from BWA: gap opening for the maximum number of bases between InDel and SNV/InDel to be considered as linked [default to %d].\n", DEFAULT_CO);
     fprintf(stderr, " -T the bed file that overrides the -d, -f, -B -O, and -E parameters in the defined regions [default to None].\n");
     
+    fprintf(stderr, " -I boolean flag indicating if the generation of delins variants is not required for the elimination of simple variants. [default to false].\n");
     fprintf(stderr, " -L boolean flag indicating if left-trimming of bases occurring in both REF and ALT should be disabled [default to false].\n");
     fprintf(stderr, " -R boolean flag indicating if right-trimming of bases occurring in both REF and ALT should be disabled [default to false].\n");
     fprintf(stderr, " -S boolean flag indicating if short-tandem-repeats (STRs) should be considered in the merging of simple variants [default to false].\n");
@@ -208,6 +209,7 @@ int main(int argc, char **argv) {
     int defaultCB1 = DEFAULT_CB;
     int defaultCO1 = DEFAULT_CO;
     int defaultCE1 = DEFAULT_CE;
+    bool disable_is_part_of_delinsvar_3tups_check = false;
     bool enable_short_tandem_repeat_adjust = false;
     bool disable_left_trim = false;
     bool disable_right_trim = false;
@@ -216,9 +218,9 @@ int main(int argc, char **argv) {
     const char *simple_outvcfname = NULL;
     const char *defaultMode = DEFAULT_M;
     int opt = -1;
-    while ((opt = getopt(argc, argv, "c:d:f:p:A:B:E:H:O:R:T:LRS")) != -1) {
+    while ((opt = getopt(argc, argv, "c:d:f:p:A:B:E:H:O:R:T:ILRS")) != -1) {
         switch (opt) {
-            case 'c': defaultC = atof(optarg); break; // complex2simple_var_frac_above_which_discard_simple 
+            case 'c': defaultC = atof(optarg); break; // delins2simple_var_frac_above_which_discard_simple 
             case 'd': linkdepth1 = atoi(optarg); break;
             case 'f': linkfrac1 = atof(optarg); break;
             case 'p': powlaw_exponent = atof(optarg); break;
@@ -226,13 +228,13 @@ int main(int argc, char **argv) {
             case 'A': defaultAD = optarg; ; break;            
             case 'B': defaultCB1 = atoi(optarg); break;
             case 'C': simple_outvcfname = optarg; break;
-            
             case 'E': defaultCE1 = atoi(optarg); break;
             case 'M': defaultMode = optarg; break;
             case 'H': defaultH1 = optarg; break;
             case 'O': defaultCO1 = atoi(optarg); break;
             case 'T': bedfile = optarg; break;
             
+            case 'I': disable_is_part_of_delinsvar_3tups_check = true; break;
             case 'L': disable_left_trim = true; break;
             case 'R': disable_right_trim = true; break;
             case 'S': enable_short_tandem_repeat_adjust = true; break;
@@ -251,9 +253,9 @@ int main(int argc, char **argv) {
     faidx_t *faidx = fai_load(fastaref);
     htsFile *fp = vcf_open(uvcvcf, "r");
     bcf_hdr_t *bcf_hdr = vcf_hdr_read(fp);
-    bcf_hdr_append(bcf_hdr, (std::string("##complexVariantDate=") + timestring).c_str());
-    bcf_hdr_append(bcf_hdr, "##complexVariantCallerVersion=" COMMIT_VERSION "(" COMMIT_DIFF_SH ")");
-    std::string vcfcmd = "##complexVariantCallerCommand=";
+    bcf_hdr_append(bcf_hdr, (std::string("##delinsVariantDate=") + timestring).c_str());
+    bcf_hdr_append(bcf_hdr, "##delinsVariantCallerVersion=" COMMIT_VERSION "(" COMMIT_DIFF_SH ")");
+    std::string vcfcmd = "##delinsVariantCallerCommand=";
     for (int i = 0; i < argc; i++) {
         vcfcmd += std::string("") + std::string(argv[i]) + "  ";
     }
@@ -263,10 +265,10 @@ int main(int argc, char **argv) {
     bcf_hdr_append(bcf_hdr, "##INFO=<ID=tPRA,Number=1,Type=String,Description=\"Tumor position_REF_ALT, with the three VCF fields separated by underscore\">");
     bcf_hdr_append(bcf_hdr, "##INFO=<ID=tDPm,Number=1,Type=Integer,Description=\"Tumor total deduped depth (deprecated, please see CDP1f and CDP1r) taken as the minimum of the decomposed SNV-InDel alleles. \">");
     bcf_hdr_append(bcf_hdr, "##INFO=<ID=tDPM,Number=1,Type=Integer,Description=\"Tumor total deduped depth (deprecated, please see CDP1f and CDP1r) taken as the maximum of the decomposed SNV-InDel alleles. \">");
-    bcf_hdr_append(bcf_hdr, "##INFO=<ID=tADA,Number=A,Type=Integer,Description=\"Tumor total deduped depth of each MNV or complex variant. \">");
-    bcf_hdr_append(bcf_hdr, "##INFO=<ID=tADRm,Number=R,Type=Integer,Description=\"Tumor deduped depth of each MNV or complex variant by using the minimum depth among the linked SNVs and/or InDels. \">");
-    bcf_hdr_append(bcf_hdr, "##INFO=<ID=tADRM,Number=R,Type=Integer,Description=\"Tumor deduped depth of each MNV or complex variant by using the maximum depth among the linked SNVs and/or InDels (deprecated, please see cDP1f and cDP1r) (WARNING: use this field with caution because it should not be used under normal circumstances!). \">");
-    bcf_hdr_append(bcf_hdr, "##INFO=<ID=tAD2F,Number=A,Type=Integer,Description=\"Percentage (100x) of reads that support the complex variant among the decomposed non-complex variants. \">");
+    bcf_hdr_append(bcf_hdr, "##INFO=<ID=tADA,Number=A,Type=Integer,Description=\"Tumor total deduped depth of each MNV or delins variant. \">");
+    bcf_hdr_append(bcf_hdr, "##INFO=<ID=tADRm,Number=R,Type=Integer,Description=\"Tumor deduped depth of each MNV or delins variant by using the minimum depth among the linked SNVs and/or InDels. \">");
+    bcf_hdr_append(bcf_hdr, "##INFO=<ID=tADRM,Number=R,Type=Integer,Description=\"Tumor deduped depth of each MNV or delins variant by using the maximum depth among the linked SNVs and/or InDels (deprecated, please see cDP1f and cDP1r) (WARNING: use this field with caution because it should not be used under normal circumstances!). \">");
+    bcf_hdr_append(bcf_hdr, "##INFO=<ID=tAD2F,Number=A,Type=Integer,Description=\"Percentage (100x) of reads that support the delins variant among the decomposed non-delins variants. \">");
     bcf_hdr_append(bcf_hdr, "##INFO=<ID=tHVQ,Number=A,Type=Integer,Description=\"Haplotype (non-SNV and non-InDel small) variant Quality. \">");
     
     bcf_hdr_t *bcf_hdr2 = bcf_hdr_dup(bcf_hdr);
@@ -376,7 +378,7 @@ int main(int argc, char **argv) {
         
         bcf_sr_seek(sr, tname, 0);
         std::cerr << "Will finish processing tname " << tname << "\n";
-        std::set<std::tuple<int, std::string, std::string>> complexvar_3tups;
+        std::set<std::tuple<int, std::string, std::string>> delinsvar_3tups;
         while (bcf_sr_next_line(sr)) {
            
             int linkdepth = linkdepth1;
@@ -384,7 +386,7 @@ int main(int argc, char **argv) {
             int defaultCB = defaultCB1;
             int defaultCO = defaultCO1;
             int defaultCE = defaultCE1;
-            double complex2simple_var_frac_above_which_discard_simple = defaultC;
+            double delins2simple_var_frac_above_which_discard_simple = defaultC;
             
             bcf1_t *line = bcf_sr_get_line(sr, 0);
             bcf_unpack(line, BCF_UN_ALL); 
@@ -411,7 +413,7 @@ int main(int argc, char **argv) {
                             linestream >> token;
                             if (!token.compare("-c")) {
                                 linestream >> token;
-                                complex2simple_var_frac_above_which_discard_simple = atof(token.c_str());
+                                delins2simple_var_frac_above_which_discard_simple = atof(token.c_str());
                             }
                             if (!token.compare("-d")) {
                                 linestream >> token;
@@ -448,12 +450,13 @@ int main(int argc, char **argv) {
             const auto pos_ref_alt_tup_from_vcfline = std::make_tuple(line->pos, std::string(line->d.allele[0]), std::string(line->d.allele[1]));
             
             for (int j = sampleidx; j < nsamples; j++) {
-                int max_complexvarDP = 0;
+                bool is_part_of_delinsvar_3tups = false;
+                int max_delinsvarDP = 0;
                 std::vector<std::string> cHap_substrs = cHapString_to_cHapSubstrs(bcfstring[j]);
                 for (std::string cHap_string : cHap_substrs) {
-                    int complexvarDP = cHapSubstr_to_totDP(cHap_string);
-                    UPDATE_MAX(max_complexvarDP, complexvarDP);
-                    if (complexvarDP < linkdepth || complexvarDP < linkfrac * vcflineAD) {
+                    int delinsvarDP = cHapSubstr_to_totDP(cHap_string);
+                    UPDATE_MAX(max_delinsvarDP, delinsvarDP);
+                    if (delinsvarDP < linkdepth || delinsvarDP < linkfrac * vcflineAD) {
                         // fprintf(stderr, "Skipping the variant %s %d because it has low DP\n", tname, line->pos);
                         continue; // this variant has low DP
                     }
@@ -470,12 +473,12 @@ int main(int argc, char **argv) {
                     for (const auto & vecof_pos_ref_alt_tup1 : vecof_vecof_pos_ref_alt_tup) {
                         
                         if (vecof_pos_ref_alt_tup1.size() <= 1) { 
-                            // fprintf(stderr, "Skipping the variant %s %d because it is not complex\n", tname, line->pos);
-                            continue; // this variant is not complex
+                            // fprintf(stderr, "Skipping the variant %s %d because it is not delins\n", tname, line->pos);
+                            continue; // this variant is not delins
                         }
-                        double errmodel_complexvarfrac_phred = 0.0;
-                        int complexvar_begpos = INT32_MAX;
-                        int complexvar_endpos = 0;
+                        double errmodel_delinsvarfrac_phred = 0.0;
+                        int delinsvar_begpos = INT32_MAX;
+                        int delinsvar_endpos = 0;
                         float cv_qual = FLT_MAX;
                         int tDPmin = INT_MAX;
                         int tDPmax = 0;
@@ -486,8 +489,8 @@ int main(int argc, char **argv) {
                             std::string ref = std::get<1>(pos_ref_alt_tup);
                             std::string alt = std::get<2>(pos_ref_alt_tup);
                             int endpos = pos + (int)MAX(alt.size(), ref.size());
-                            UPDATE_MIN(complexvar_begpos, pos);
-                            UPDATE_MAX(complexvar_endpos, endpos);
+                            UPDATE_MIN(delinsvar_begpos, pos);
+                            UPDATE_MAX(delinsvar_endpos, endpos);
                             float qual = std::get<3>(pos_ref_alt_tup).qual;
                             int tDP = std::get<3>(pos_ref_alt_tup).tDP;
                             const auto &tADR = std::get<3>(pos_ref_alt_tup).tADR;
@@ -498,54 +501,54 @@ int main(int argc, char **argv) {
                                 UPDATE_MIN(tADRmin[j], tADR[j]);
                                 UPDATE_MAX(tADRmax[j], tADR[j]);
                                 assert (tADR[1] <= tDP);
-                                assert (complexvarDP <= tADR[1]);
+                                assert (delinsvarDP <= tADR[1]);
                             }
-                            errmodel_complexvarfrac_phred += 10.0 / log(10.0) * log((double)(tADR[1] - complexvarDP + 0.5) / (double)(tDP + 1.0));
+                            errmodel_delinsvarfrac_phred += 10.0 / log(10.0) * log((double)(tADR[1] - delinsvarDP + 0.5) / (double)(tDP + 1.0));
                             cv_qual = MIN(qual, cv_qual);
                         }
-                        double complexvarfrac = (double)(complexvarDP + 0.5) / (double)(tDPmax + 1.0);
-                        double complexvarfrac_ratio_phred = 10.0 / log(10.0) * log(complexvarfrac) - errmodel_complexvarfrac_phred;
+                        double delinsvarfrac = (double)(delinsvarDP + 0.5) / (double)(tDPmax + 1.0);
+                        double delinsvarfrac_ratio_phred = 10.0 / log(10.0) * log(delinsvarfrac) - errmodel_delinsvarfrac_phred;
                         
-                        std::string complex_ref = refstring.substr(complexvar_begpos, complexvar_endpos - complexvar_begpos);
-                        std::vector<std::string> complex_alt_;
-                        for (const auto base : complex_ref) {
-                            complex_alt_.push_back(std::string(&base, 1));
+                        std::string delins_ref = refstring.substr(delinsvar_begpos, delinsvar_endpos - delinsvar_begpos);
+                        std::vector<std::string> delins_alt_;
+                        for (const auto base : delins_ref) {
+                            delins_alt_.push_back(std::string(&base, 1));
                         }
                         for (auto pos_ref_alt_tup : vecof_pos_ref_alt_tup1) {
                             int pos = std::get<0>(pos_ref_alt_tup);
                             std::string ref = std::get<1>(pos_ref_alt_tup);
                             std::string alt = std::get<2>(pos_ref_alt_tup);
                             for (int k = pos; k < pos + (int)ref.size(); k++) {
-                                complex_alt_[k - complexvar_begpos] = "";
+                                delins_alt_[k - delinsvar_begpos] = "";
                             }
-                            complex_alt_[pos - complexvar_begpos] = alt;
+                            delins_alt_[pos - delinsvar_begpos] = alt;
                         }
-                        std::string complex_alt = "";
-                        for (const auto subalt : complex_alt_) {
-                            complex_alt.append(subalt);
+                        std::string delins_alt = "";
+                        for (const auto subalt : delins_alt_) {
+                            delins_alt.append(subalt);
                         }
                         int vcfline_pos = (std::get<0>(pos_ref_alt_tup_from_vcfline));
-                        if (complexvar_begpos > vcfline_pos || vcfline_pos >= (complexvar_begpos + (int)MAX(complex_ref.size(), complex_alt.size()))) { 
+                        if (delinsvar_begpos > vcfline_pos || vcfline_pos >= (delinsvar_begpos + (int)MAX(delins_ref.size(), delins_alt.size()))) { 
                             /*
                             fprintf(stderr, "Skipping the variant %s %d %s %s because it is outside the ROI\n", 
                                 tname, vcfline_pos, 
                                 std::get<1>(pos_ref_alt_tup_from_vcfline).c_str(), 
                                 std::get<2>(pos_ref_alt_tup_from_vcfline).c_str());
                             */
-                            continue; // this var is outside the complex var region
+                            continue; // this var is outside the delins var region
                         }
-                        const auto complexvar_3tup = std::make_tuple(complexvar_begpos, complex_ref, complex_alt);
+                        const auto delinsvar_3tup = std::make_tuple(delinsvar_begpos, delins_ref, delins_alt);
                         
-                        if (complexvar_3tups.find(complexvar_3tup) != complexvar_3tups.end()) { 
+                        if (delinsvar_3tups.find(delinsvar_3tup) != delinsvar_3tups.end()) { 
                             fprintf(stderr, "Skipping the variant %s %d %s %s because it is already visited\n", 
                                 tname, vcfline_pos, 
                                 std::get<1>(pos_ref_alt_tup_from_vcfline).c_str(), 
                                 std::get<2>(pos_ref_alt_tup_from_vcfline).c_str());
                             continue; // this var has already been printed
                         }
-                        int cv_begpos = complexvar_begpos;
-                        std::string cv_ref = complex_ref;
-                        std::string cv_alt = complex_alt;
+                        int cv_begpos = delinsvar_begpos;
+                        std::string cv_ref = delins_ref;
+                        std::string cv_alt = delins_alt;
                         if (!disable_left_trim) {
                             size_t begpos_inc = 0;
                             while ((begpos_inc + 1 < cv_ref.size())
@@ -574,25 +577,30 @@ int main(int argc, char **argv) {
                             << (std::get<2>(pos_ref_alt_tup_from_vcfline))
                             << ";tDPm=" << tDPmin
                             << ";tDPM=" << tDPmax
-                            << ";tADA=" << complexvarDP
+                            << ";tADA=" << delinsvarDP
                             << ";tADRm=" << other_join(tADRmin, ",")
                             << ";tADRM=" << other_join(tADRmax, ",")
                             << ";tAD2F=" << (tADRmin[1] * 100 / MAX(1, tADRmax[1]))
-                            << ";tHVQ=" << (powlaw_exponent * complexvarfrac_ratio_phred)
+                            << ";tHVQ=" << (powlaw_exponent * delinsvarfrac_ratio_phred)
                             << "\n";
-                        for (auto it = complexvar_3tups.begin(); it != complexvar_3tups.end(); ) {
+                        for (auto it = delinsvar_3tups.begin(); it != delinsvar_3tups.end(); ) {
                             int endpos = std::get<0>(*it) + (int)MAX(std::get<1>(*it).size(), std::get<2>(*it).size());
                             if (endpos < vcfline_pos) {
-                                it = complexvar_3tups.erase(it);
+                                it = delinsvar_3tups.erase(it);
                             } else {
                                 it++;
                             }
                         }
-                        complexvar_3tups.insert(complexvar_3tup);
+                        delinsvar_3tups.insert(delinsvar_3tup);
+                        if (delinsvar_3tups.find(delinsvar_3tup) != delinsvar_3tups.end()) {
+                            is_part_of_delinsvar_3tups = true;
+                        }
                     }
                 }
-                if ((max_complexvarDP > vcflineAD * complex2simple_var_frac_above_which_discard_simple) && (simple_outvcf != NULL)) { 
-                    // is mostly part of a complex variant
+                if ((simple_outvcf != NULL)
+                        && (is_part_of_delinsvar_3tups || disable_is_part_of_delinsvar_3tups_check)
+                        && (max_delinsvarDP > vcflineAD * delins2simple_var_frac_above_which_discard_simple)) { 
+                    // is mostly part of a delins variant
                     int vcf_write_ret = vcf_write(simple_outvcf, bcf_hdr, line);
                     assert(vcf_write_ret > 0);
                 }
