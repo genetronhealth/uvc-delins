@@ -13,9 +13,11 @@ uvc-rawvcf2hapvcf.debug : uvc_rawvcf2hapvcf.cpp Makefile
 uvc-rawvcf2hapvcf : uvc_rawvcf2hapvcf.cpp Makefile
 	g++ $(VERFLAGS) -O3 -o uvc-rawvcf2hapvcf uvc_rawvcf2hapvcf.cpp $(CXXFLAGS)
 
-.PHONY clean: 
+.PHONY: clean deploy
+
+clean:
 	rm uvc-rawvcf2hapvcf uvc-rawvcf2hapvcf.debug
 
-.PHONY deploy:
+deploy:
 	cp uvc-rawvcf2hapvcf uvc-rawvcf2hapvcf.debug bin/
 
