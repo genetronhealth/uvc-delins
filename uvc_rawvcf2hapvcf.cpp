@@ -285,9 +285,17 @@ int main(int argc, char **argv) {
     bcf_hdr_destroy(bcf_hdr2);
     // int set_samples_ret2 = bcf_hdr_set_samples(bcf_hdr, "-", false);
     // assert(0 == set_samples_ret2);
-    htsFile *simple_outvcf = ((NULL == simple_outvcfname) ? NULL : vcf_open(simple_outvcfname, defaultMode));
-    htsFile *non_delins_outvcf = ((NULL == non_delins_outvcfname) ? NULL : vcf_open(non_delins_outvcfname, defaultMode));
+    htsFile *simple_outvcf = ((NULL == simple_outvcfname) ? NULL : vcf_open(simple_outvcfname, (defaultMode)));
+    htsFile *non_delins_outvcf = ((NULL == non_delins_outvcfname) ? NULL : vcf_open(non_delins_outvcfname, (defaultMode)));
     
+    if (NULL != simple_outvcf) {
+        int vcf_hdr_write_ret = vcf_hdr_write(simple_outvcf, bcf_hdr);
+        assert (vcf_hdr_write_ret >= 0);
+    }
+    if (NULL != non_delins_outvcf) {
+        int vcf_hdr_write_ret = vcf_hdr_write(non_delins_outvcf, bcf_hdr);
+        assert (vcf_hdr_write_ret >= 0);
+    }
     int vcf_nseqs = -1;
     const char **seqnames = bcf_hdr_seqnames(bcf_hdr, &vcf_nseqs);
     
@@ -395,7 +403,7 @@ int main(int argc, char **argv) {
             
             bcf1_t *line = bcf_sr_get_line(sr, 0);
             bcf_unpack(line, BCF_UN_ALL); 
-
+            
             if (bedfile != NULL && bedstream.good()) {
                 int vcftid = line->rid;
                 int vcfbeg = line->pos;
@@ -609,14 +617,14 @@ int main(int argc, char **argv) {
                         && (max_delinsvarDP > vcflineAD * delins2simple_var_frac_above_which_discard_simple)) { 
                     // is mostly part of a delins variant
                     int vcf_write_ret = vcf_write(simple_outvcf, bcf_hdr, line);
-                    assert(vcf_write_ret > 0);
+                    assert(vcf_write_ret >= 0);
                 }
                 if ((non_delins_outvcf != NULL) && (
                         (!is_part_of_delinsvar_3tups)
                         || (max_delinsvarDP <= vcflineAD * delins2simple_var_frac_above_which_discard_simple))) {
                     // is not mostly part of a delins variant
                     int vcf_write_ret = vcf_write(non_delins_outvcf, bcf_hdr, line);
-                    assert(vcf_write_ret > 0);
+                    assert(vcf_write_ret >= 0 || !fprintf(stderr, "The VCF record at tid-pos-ref-alt %d %ld %s %s\n", line->rid, line->pos, line->d.allele[0], line->d.allele[1]));
                 }
             }
         }
