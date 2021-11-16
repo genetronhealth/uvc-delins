@@ -272,7 +272,8 @@ int main(int argc, char **argv) {
     bcf_hdr_append(bcf_hdr, "##INFO=<ID=tADRm,Number=R,Type=Integer,Description=\"Tumor deduped depth of each MNV or delins variant by using the minimum depth among the linked SNVs and/or InDels. \">");
     bcf_hdr_append(bcf_hdr, "##INFO=<ID=tADRM,Number=R,Type=Integer,Description=\"Tumor deduped depth of each MNV or delins variant by using the maximum depth among the linked SNVs and/or InDels (deprecated, please see cDP1f and cDP1r) (WARNING: use this field with caution because it should not be used under normal circumstances!). \">");
     bcf_hdr_append(bcf_hdr, "##INFO=<ID=tAD2F,Number=A,Type=Integer,Description=\"Percentage (100x) of reads that support the delins variant among the decomposed non-delins variants. \">");
-    bcf_hdr_append(bcf_hdr, "##INFO=<ID=tHVQ,Number=A,Type=Integer,Description=\"Haplotype (non-SNV and non-InDel small) variant Quality. \">");
+    bcf_hdr_append(bcf_hdr, "##INFO=<ID=tCVQ,Number=A,Type=Integer,Description=\"Combined (by combining SNVs and InDels) variant Quality. \">");
+    bcf_hdr_append(bcf_hdr, "##INFO=<ID=tHVQ,Number=A,Type=Integer,Description=\"Haplotyped (non-SNV and non-InDel small) variant Quality. \">");
     
     bcf_hdr_t *bcf_hdr2 = bcf_hdr_dup(bcf_hdr);
     // int set_samples_ret = bcf_hdr_set_samples(bcf_hdr, bcf_hdr->samples[bcf_hdr->nsamples_ori - 1], false);
@@ -573,8 +574,9 @@ int main(int argc, char **argv) {
                             cv_ref = cv_ref.substr(0, cv_ref.size() - endpos_dec);
                             cv_alt = cv_alt.substr(0, cv_alt.size() - endpos_dec);
                         }
+                        double hv_qual = (powlaw_exponent * delinsvarfrac_ratio_phred); // c and h : combined and haplotyped combined
                         std::cout << tname << "\t" << (cv_begpos + 1) << "\t.\t" << cv_ref << "\t" << cv_alt 
-                            << "\t" << std::to_string(cv_qual) << "\t.\t" << "tHap=" << cHap_string 
+                            << "\t" << std::to_string(MIN(cv_qual, hv_qual)) << "\t.\t" << "tHap=" << cHap_string 
                             << ";tPRA="
                             << (std::get<0>(pos_ref_alt_tup_from_vcfline)) << "_"
                             << (std::get<1>(pos_ref_alt_tup_from_vcfline)) << "_"
@@ -585,7 +587,8 @@ int main(int argc, char **argv) {
                             << ";tADRm=" << other_join(tADRmin, ",")
                             << ";tADRM=" << other_join(tADRmax, ",")
                             << ";tAD2F=" << (tADRmin[1] * 100 / MAX(1, tADRmax[1]))
-                            << ";tHVQ=" << (powlaw_exponent * delinsvarfrac_ratio_phred)
+                            << ";tHVQ=" << hv_qual
+                            << ";tCVQ=" << cv_qual
                             << "\n";
                         for (auto it = delinsvar_3tups.begin(); it != delinsvar_3tups.end(); ) {
                             int endpos = std::get<0>(*it) + (int)MAX(std::get<1>(*it).size(), std::get<2>(*it).size());
