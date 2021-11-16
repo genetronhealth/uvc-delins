@@ -177,6 +177,7 @@ void help(int argc, char **argv) {
             "The 2 values bAD/AD/c2AD at -A correspond to bHap/cHap/c2Hap at -H. [default to %s].\n", DEFAULT_A);
     fprintf(stderr, " -B from BWA: maximum number of bases between SNV and SNV to be considered as linked [default to %d].\n", DEFAULT_CB);
     fprintf(stderr, " -C the VCF file containing simple variants discarded by constructing delins variants [default to NULL, generating no output].\n");
+    fprintf(stderr, " -D the VCF file containing simple variants kept after constructing delins variants [default to NULL, generating no output].\n");
     fprintf(stderr, " -E from BWA: gap extension for the maximum number of bases between InDel and SNV/InDel to be considered as linked [default to %d].\n", DEFAULT_CE);
     fprintf(stderr, " -H FORMAT tag in the UVC-VCF-GZ file used to contain the haplotype information [default to %s].\n", DEFAULT_H);
     fprintf(stderr, " -M mode for the output VCF file containing simple variants that are entirely parts of some delins variant [default to %s].\n", DEFAULT_M);
@@ -216,6 +217,7 @@ int main(int argc, char **argv) {
     const char *defaultH1 = DEFAULT_H;
     const char *defaultAD = DEFAULT_A; // bAD, AD, c2AD for bHap, cHap, and c2Hap
     const char *simple_outvcfname = NULL;
+    const char *non_delins_outvcfname = NULL;
     const char *defaultMode = DEFAULT_M;
     int opt = -1;
     while ((opt = getopt(argc, argv, "c:d:f:p:A:B:E:H:O:R:T:ILRS")) != -1) {
@@ -228,6 +230,7 @@ int main(int argc, char **argv) {
             case 'A': defaultAD = optarg; ; break;            
             case 'B': defaultCB1 = atoi(optarg); break;
             case 'C': simple_outvcfname = optarg; break;
+            case 'D': non_delins_outvcfname = optarg; break;
             case 'E': defaultCE1 = atoi(optarg); break;
             case 'M': defaultMode = optarg; break;
             case 'H': defaultH1 = optarg; break;
@@ -282,6 +285,7 @@ int main(int argc, char **argv) {
     // int set_samples_ret2 = bcf_hdr_set_samples(bcf_hdr, "-", false);
     // assert(0 == set_samples_ret2);
     htsFile *simple_outvcf = vcf_open(simple_outvcfname, defaultMode);
+    htsFile *non_delins_outvcf = vcf_open(non_delins_outvcfname, defaultMode);
     
     int vcf_nseqs = -1;
     const char **seqnames = bcf_hdr_seqnames(bcf_hdr, &vcf_nseqs);
@@ -604,6 +608,13 @@ int main(int argc, char **argv) {
                     int vcf_write_ret = vcf_write(simple_outvcf, bcf_hdr, line);
                     assert(vcf_write_ret > 0);
                 }
+                if ((non_delins_outvcf != NULL) && (
+                        (!is_part_of_delinsvar_3tups)
+                        || (max_delinsvarDP <= vcflineAD * delins2simple_var_frac_above_which_discard_simple))) {
+                    // is not mostly part of a delins variant
+                    int vcf_write_ret = vcf_write(non_delins_outvcf, bcf_hdr, line);
+                    assert(vcf_write_ret > 0);
+                }
             }
         }
         bcf_sr_destroy(sr);
@@ -613,6 +624,9 @@ int main(int argc, char **argv) {
     }
     if (NULL != simple_outvcf) {
         vcf_close(simple_outvcf);
+    }
+    if (NULL != non_delins_outvcf) {
+        vcf_close(non_delins_outvcf);
     }
     bcf_hdr_destroy(bcf_hdr);
     vcf_close(fp);
