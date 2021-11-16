@@ -220,7 +220,7 @@ int main(int argc, char **argv) {
     const char *non_delins_outvcfname = NULL;
     const char *defaultMode = DEFAULT_M;
     int opt = -1;
-    while ((opt = getopt(argc, argv, "c:d:f:p:A:B:E:H:O:R:T:ILRS")) != -1) {
+    while ((opt = getopt(argc, argv, "c:d:f:p:A:B:C:D:E:M:H:O:T:ILRS")) != -1) {
         switch (opt) {
             case 'c': defaultC = atof(optarg); break; // delins2simple_var_frac_above_which_discard_simple 
             case 'd': linkdepth1 = atoi(optarg); break;
@@ -285,8 +285,8 @@ int main(int argc, char **argv) {
     bcf_hdr_destroy(bcf_hdr2);
     // int set_samples_ret2 = bcf_hdr_set_samples(bcf_hdr, "-", false);
     // assert(0 == set_samples_ret2);
-    htsFile *simple_outvcf = vcf_open(simple_outvcfname, defaultMode);
-    htsFile *non_delins_outvcf = vcf_open(non_delins_outvcfname, defaultMode);
+    htsFile *simple_outvcf = ((NULL == simple_outvcfname) ? NULL : vcf_open(simple_outvcfname, defaultMode));
+    htsFile *non_delins_outvcf = ((NULL == non_delins_outvcfname) ? NULL : vcf_open(non_delins_outvcfname, defaultMode));
     
     int vcf_nseqs = -1;
     const char **seqnames = bcf_hdr_seqnames(bcf_hdr, &vcf_nseqs);
