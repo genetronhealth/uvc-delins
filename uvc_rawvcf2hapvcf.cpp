@@ -557,6 +557,7 @@ int main(int argc, char **argv) {
                                 tname, vcfline_pos, 
                                 std::get<1>(pos_ref_alt_tup_from_vcfline).c_str(), 
                                 std::get<2>(pos_ref_alt_tup_from_vcfline).c_str());
+                            is_part_of_delinsvar_3tups = true;
                             continue; // this var has already been printed
                         }
                         int cv_begpos = delinsvar_begpos;
