@@ -149,9 +149,9 @@ std::map<std::string, int> build_tname2tid_from_faidx(const faidx_t *faidx) {
     return ret;
 }
 
-const double DEFAULT_C = 0.75 + 1e-6;
+const double DEFAULT_C = 0.70 + 1e-6;
 const double DEFAULT_C2 = 0.60 + 1e-6;
-const double DEFAULT_C3 = 0.75 + 1e-6;
+const double DEFAULT_C3 = 0.65 + 1e-6;
 const int DEFAULT_D = 3;
 const double DEFAULT_F = 0.1 + 1e-6;
 const char *DEFAULT_H = "cHap"; // bHap, cHap, c2Hap
