@@ -149,9 +149,9 @@ std::map<std::string, int> build_tname2tid_from_faidx(const faidx_t *faidx) {
     return ret;
 }
 
-const double DEFAULT_C = 0.70 + 1e-6;
+const double DEFAULT_C = 0.75 + 1e-6;
 const double DEFAULT_C2 = 0.60 + 1e-6;
-const double DEFAULT_C3 = 0.65 + 1e-6;
+const double DEFAULT_C3 = 0.75 + 1e-6;
 const int DEFAULT_D = 3;
 const double DEFAULT_F = 0.1 + 1e-6;
 const char *DEFAULT_H = "cHap"; // bHap, cHap, c2Hap
@@ -571,6 +571,8 @@ int main(int argc, char **argv) {
                                 std::get<1>(pos_ref_alt_tup_from_vcfline).c_str(), 
                                 std::get<2>(pos_ref_alt_tup_from_vcfline).c_str());
                             is_part_of_delinsvar_3tups = true;
+                            tADRmin_overall += tADRmin[1];
+                            tADRmax_overall += tADRmax[1];
                             continue; // this var has already been printed
                         }
                         int cv_begpos = delinsvar_begpos;
