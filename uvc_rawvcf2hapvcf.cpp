@@ -149,7 +149,9 @@ std::map<std::string, int> build_tname2tid_from_faidx(const faidx_t *faidx) {
     return ret;
 }
 
-const double DEFAULT_C = 0.75;
+const double DEFAULT_C = 0.75 + 1e-6;
+const double DEFAULT_C2 = 0.60 + 1e-6;
+const double DEFAULT_C3 = 0.75 + 1e-6;
 const int DEFAULT_D = 3;
 const double DEFAULT_F = 0.1 + 1e-6;
 const char *DEFAULT_H = "cHap"; // bHap, cHap, c2Hap
@@ -168,6 +170,9 @@ void help(int argc, char **argv) {
     fprintf(stderr, "Usage: %s <REFERENCE-FASTA> <UVC-VCF-GZ> \n", argv[0]);
     fprintf(stderr, "Optional parameters:\n");
     
+    fprintf(stderr, " -2 the fraction of simple-variant depth used to construct the delins variant with the highest depth, above which the simple variant is discarded in -D if -3 is also satisfied [default to %f].\n", DEFAULT_C2);
+    fprintf(stderr, " -2 min ratio of min-depth to max-depth of the simple variants, above which the simple variants are discarded in -D if -2 is also satisfied [default to %f].\n", DEFAULT_C3);
+
     fprintf(stderr, " -c the fraction of simple-variant depth used to construct the delins variant with the highest depth, above which the simple variant is discarded in -D [default to %f].\n", DEFAULT_C);
     fprintf(stderr, " -d minimum allele depth of the linked variants [default to %d].\n", DEFAULT_D);
     fprintf(stderr, " -f minimum fraction of the linked variants [default to %f].\n", DEFAULT_F);
@@ -205,6 +210,8 @@ int main(int argc, char **argv) {
     char *bedfile = NULL;
     double powlaw_exponent = POWLAW_EXPONENT;
     double defaultC = DEFAULT_C;
+    double defaultC2 = DEFAULT_C2;
+    double defaultC3 = DEFAULT_C3;
     int linkdepth1 = DEFAULT_D;
     double linkfrac1 = DEFAULT_F;
     int defaultCB1 = DEFAULT_CB;
@@ -220,9 +227,12 @@ int main(int argc, char **argv) {
     const char *non_delins_outvcfname = NULL;
     const char *defaultMode = DEFAULT_M;
     int opt = -1;
-    while ((opt = getopt(argc, argv, "c:d:f:p:A:B:C:D:E:M:H:O:T:ILRS")) != -1) {
+    while ((opt = getopt(argc, argv, "2:3:c:d:f:p:A:B:C:D:E:M:H:O:T:ILRS")) != -1) {
         switch (opt) {
             case 'c': defaultC = atof(optarg); break; // delins2simple_var_frac_above_which_discard_simple 
+            case '2': defaultC2 = atof(optarg); break;
+            case '3': defaultC3 = atof(optarg); break;
+            
             case 'd': linkdepth1 = atoi(optarg); break;
             case 'f': linkfrac1 = atof(optarg); break;
             case 'p': powlaw_exponent = atof(optarg); break;
@@ -466,6 +476,8 @@ int main(int argc, char **argv) {
                 bool is_part_of_delinsvar_3tups = false;
                 int max_delinsvarDP = 0;
                 std::vector<std::string> cHap_substrs = cHapString_to_cHapSubstrs(bcfstring[j]);
+                int tADRmin_overall = 0;
+                int tADRmax_overall = 0;
                 for (std::string cHap_string : cHap_substrs) {
                     int delinsvarDP = cHapSubstr_to_totDP(cHap_string);
                     UPDATE_MAX(max_delinsvarDP, delinsvarDP);
@@ -483,7 +495,8 @@ int main(int argc, char **argv) {
                     
                     const auto vecof_vecof_pos_ref_alt_tup = vecof_pos_ref_alt_tup_split(vecof_pos_ref_alt_begpos_endpos_tup,
                         defaultCB, defaultCO, defaultCE, enable_short_tandem_repeat_adjust);
-                    for (const auto & vecof_pos_ref_alt_tup1 : vecof_vecof_pos_ref_alt_tup) {
+                    
+                        for (const auto & vecof_pos_ref_alt_tup1 : vecof_vecof_pos_ref_alt_tup) {
                         
                         if (vecof_pos_ref_alt_tup1.size() <= 1) { 
                             // fprintf(stderr, "Skipping the variant %s %d because it is not delins\n", tname, line->pos);
@@ -607,22 +620,27 @@ int main(int argc, char **argv) {
                                 it++;
                             }
                         }
+                        tADRmin_overall += tADRmin[1];
+                        tADRmax_overall += tADRmax[1];
                         delinsvar_3tups.insert(delinsvar_3tup);
                         if (delinsvar_3tups.find(delinsvar_3tup) != delinsvar_3tups.end()) {
                             is_part_of_delinsvar_3tups = true;
                         }
                     }
                 }
+                const bool are_all_vars_delins1 = (max_delinsvarDP > vcflineAD * delins2simple_var_frac_above_which_discard_simple);
+                const bool are_all_vars_delins2 = ((max_delinsvarDP > vcflineAD * defaultC2) && (tADRmin_overall > tADRmax_overall * defaultC3));
+                const bool are_all_vars_delins = (are_all_vars_delins1 || are_all_vars_delins2);
                 if ((simple_outvcf != NULL)
                         && (is_part_of_delinsvar_3tups || disable_is_part_of_delinsvar_3tups_check)
-                        && (max_delinsvarDP > vcflineAD * delins2simple_var_frac_above_which_discard_simple)) { 
+                        && are_all_vars_delins) { 
                     // is mostly part of a delins variant
                     int vcf_write_ret = vcf_write(simple_outvcf, bcf_hdr, line);
                     assert(vcf_write_ret >= 0);
                 }
                 if ((non_delins_outvcf != NULL) && (
                         (!is_part_of_delinsvar_3tups)
-                        || (max_delinsvarDP <= vcflineAD * delins2simple_var_frac_above_which_discard_simple))) {
+                        || (!are_all_vars_delins))) {
                     // is not mostly part of a delins variant
                     int vcf_write_ret = vcf_write(non_delins_outvcf, bcf_hdr, line);
                     assert(vcf_write_ret >= 0 || !fprintf(stderr, "The VCF record at tid-pos-ref-alt %d %ld %s %s\n", line->rid, line->pos, line->d.allele[0], line->d.allele[1]));
