@@ -14,7 +14,7 @@ if [ "${1}" = '-h' -o $# -lt 3 ]; then
 fi
 
 scriptdir="$(dirname $(which "${0}"))"
-UVCHAP="${scriptdir}/uvc-rawvcf2hapvcf"
+UVCdelins="${scriptdir}/uvcvcf-raw2delins"
 FASTAREF="${1}"
 rawvcf="${2}"
 combvcf="${3}.consumed-simple-with-fmt.vcf.gz" # vcf containing simple variants that should be removed because they are entirely parts of some complex variants.
@@ -25,7 +25,7 @@ mergedvcf="${3}.merged-simple-delins.vcf.gz" # vcf containing both simple and de
 
 bcftools index -f "${rawvcf}" || true
 
-bash "${UVCHAP}" "${FASTAREF}" "${rawvcf}" -C "${combvcf}" -D "${unhapvcf}" -M wz "${@:4}" 2> "${rawvcf/uvc.vcf.gz/uvc-hap.stderr}" \
+"${UVCdelins}" "${FASTAREF}" "${rawvcf}" -C "${combvcf}" -D "${unhapvcf}" -M wz "${@:4}" 2> "${rawvcf/uvc.vcf.gz/uvc-hap.stderr}" \
      |   bcftools sort - \
      |   bcftools view -Oz -o "${hapvcf}" -
 
