@@ -23,15 +23,16 @@ hapvcf="${3}.generated-delins.vcf.gz" # vcf containing delins variants combined 
 unhapvcf2="${3}.leftover-simple.vcf.gz" # same as unhapvcf but with sample format data removed
 mergedvcf="${3}.merged-simple-delins.vcf.gz" # vcf containing both simple and delins variants
 
-bcftools index -f "${rawvcf}" \
-         &&  "${UVCHAP}" "${FASTAREF}" "${rawvcf}" -C "${combvcf}" -D "${unhapvcf}" -M wz "${@:4}" 2> "${rawvcf/uvc.vcf.gz/uvc-hap.stderr}" \
-         |   bcftools sort - \
-         |   bcftools view -Oz -o "${hapvcf}" - \
-         &&  bcftools index -f "${combvcf}" \
-         &&  bcftools index -f "${unhapvcf}" \
-         &&  bcftools index -f "${hapvcf}" \
-         &&  bcftools view -s '' --force-samples -Oz -o "${unhapvcf2}" "${unhapvcf}" \
-         &&  bcftools index -f "${unhapvcf2}" \
-         &&  bcftools merge -Oz -m none -o "${mergedvcf}" "${unhapvcf2}" "${hapvcf}" \
-         &&  bcftools index -f "${mergedvcf}" # step-uvc-hap-1
+bcftools index -f "${rawvcf}" || true
+
+bash "${UVCHAP}" "${FASTAREF}" "${rawvcf}" -C "${combvcf}" -D "${unhapvcf}" -M wz "${@:4}" 2> "${rawvcf/uvc.vcf.gz/uvc-hap.stderr}" \
+     |   bcftools sort - \
+     |   bcftools view -Oz -o "${hapvcf}" - \
+     &&  bcftools index -f "${combvcf}" \
+     &&  bcftools index -f "${unhapvcf}" \
+     &&  bcftools index -f "${hapvcf}" \
+     &&  bcftools view -s '' --force-samples -Oz -o "${unhapvcf2}" "${unhapvcf}" \
+     &&  bcftools index -f "${unhapvcf2}" \
+     &&  bcftools merge -Oz -m none -o "${mergedvcf}" "${unhapvcf2}" "${hapvcf}" \
+     &&  bcftools index -f "${mergedvcf}" # step-uvc-hap-1
 
