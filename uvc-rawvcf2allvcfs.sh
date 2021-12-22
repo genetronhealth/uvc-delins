@@ -27,12 +27,13 @@ bcftools index -f "${rawvcf}" || true
 
 bash "${UVCHAP}" "${FASTAREF}" "${rawvcf}" -C "${combvcf}" -D "${unhapvcf}" -M wz "${@:4}" 2> "${rawvcf/uvc.vcf.gz/uvc-hap.stderr}" \
      |   bcftools sort - \
-     |   bcftools view -Oz -o "${hapvcf}" - \
-     &&  bcftools index -f "${combvcf}" \
-     &&  bcftools index -f "${unhapvcf}" \
-     &&  bcftools index -f "${hapvcf}" \
-     &&  bcftools view -s '' --force-samples -Oz -o "${unhapvcf2}" "${unhapvcf}" \
-     &&  bcftools index -f "${unhapvcf2}" \
-     &&  bcftools merge -Oz -m none -o "${mergedvcf}" "${unhapvcf2}" "${hapvcf}" \
-     &&  bcftools index -f "${mergedvcf}" # step-uvc-hap-1
+     |   bcftools view -Oz -o "${hapvcf}" -
+
+bcftools index -f "${combvcf}"  || true
+bcftools index -f "${unhapvcf}" || true
+bcftools index -f "${hapvcf}"   || true
+bcftools view -s '' --force-samples -Oz -o "${unhapvcf2}" "${unhapvcf}"
+bcftools index -f "${unhapvcf2}" || true
+bcftools merge -Oz -m none -o "${mergedvcf}" "${unhapvcf2}" "${hapvcf}"
+bcftools index -f "${mergedvcf}" || true # step-uvc-hap-1
 
