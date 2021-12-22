@@ -171,7 +171,7 @@ void help(int argc, char **argv) {
     fprintf(stderr, "Optional parameters:\n");
     
     fprintf(stderr, " -2 the fraction of simple-variant depth used to construct the delins variant with the highest depth, above which the simple variant is discarded in -D if -3 is also satisfied [default to %f].\n", DEFAULT_C2);
-    fprintf(stderr, " -2 min ratio of min-depth to max-depth of the simple variants, above which the simple variants are discarded in -D if -2 is also satisfied [default to %f].\n", DEFAULT_C3);
+    fprintf(stderr, " -3 min ratio of min-depth to max-depth of the simple variants, above which the simple variants are discarded in -D if -2 is also satisfied [default to %f].\n", DEFAULT_C3);
 
     fprintf(stderr, " -c the fraction of simple-variant depth used to construct the delins variant with the highest depth, above which the simple variant is discarded in -D [default to %f].\n", DEFAULT_C);
     fprintf(stderr, " -d minimum allele depth of the linked variants [default to %d].\n", DEFAULT_D);
