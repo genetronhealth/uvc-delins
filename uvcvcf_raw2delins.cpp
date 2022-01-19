@@ -655,10 +655,12 @@ int main(int argc, char **argv) {
         bedstream.close(); 
     }
     if (NULL != simple_outvcf) {
-        vcf_close(simple_outvcf);
+        int vcf_close_ret = vcf_close(simple_outvcf);
+        assert (vcf_close_ret == 0);
     }
     if (NULL != non_delins_outvcf) {
-        vcf_close(non_delins_outvcf);
+        int vcf_close_ret = vcf_close(non_delins_outvcf);
+        assert (vcf_close_ret == 0);
     }
     bcf_hdr_destroy(bcf_hdr);
     vcf_close(fp);
