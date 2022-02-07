@@ -1,6 +1,9 @@
 #include <algorithm>
 #include <array>
+#include <chrono>
+#include <ctime>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <map>
 #include <set>
@@ -18,7 +21,7 @@
 #include <math.h>
 #include <unistd.h>
 
-#define VERSION3 "0.1.0"
+#define VERSION3 "0.1.1"
 
 const auto MIN(const auto a, const auto b) { return ((a) < (b) ? (a) : (b)); }
 const auto MAX(const auto a, const auto b) { return ((a) > (b) ? (a) : (b)); }
@@ -200,6 +203,9 @@ void help(int argc, char **argv) {
 }
 
 int main(int argc, char **argv) {
+    
+    std::clock_t c_beg = std::clock(); 
+    auto t_beg = std::chrono::high_resolution_clock::now();
     
     time_t rawtime;
     time(&rawtime);
@@ -667,5 +673,14 @@ int main(int argc, char **argv) {
     bcf_hdr_destroy(bcf_hdr);
     vcf_close(fp);
     fai_destroy(faidx);
+
+    std::clock_t c_end = std::clock();
+    auto t_end = std::chrono::high_resolution_clock::now();
+    
+    std::cerr << std::fixed << std::setprecision(2) << "CPU time used: "
+              << 1.0 * (c_end - c_beg) / CLOCKS_PER_SEC << " seconds\n"
+              << "Wall clock time passed: "
+              << std::chrono::duration<double>(t_end - t_beg).count()
+              << " seconds\n";
 }
 
