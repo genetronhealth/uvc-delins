@@ -18,6 +18,8 @@
 #include <math.h>
 #include <unistd.h>
 
+#define VERSION3 "0.1.0"
+
 const auto MIN(const auto a, const auto b) { return ((a) < (b) ? (a) : (b)); }
 const auto MAX(const auto a, const auto b) { return ((a) > (b) ? (a) : (b)); }
 const auto UPDATE_MIN(auto & a, const auto b) { a = MIN(a, b); }
@@ -164,7 +166,7 @@ const int DEFAULT_CE = 1; // (SNV to InDel gap-ext ) and (InDel to InDel gap-ext
 const double  POWLAW_EXPONENT = 3.0;
 
 void help(int argc, char **argv) {
-    fprintf(stderr, "Program %s version %s ( %s )\n", argv[0], COMMIT_VERSION, COMMIT_DIFF_SH);
+    fprintf(stderr, "Program %s version %s-%s ( %s )\n", argv[0], VERSION3, COMMIT_VERSION, COMMIT_DIFF_SH);
     fprintf(stderr, "  This program combines simple variants into delins variants. \n");
     
     fprintf(stderr, "Usage: %s <REFERENCE-FASTA> <UVC-VCF-GZ> \n", argv[0]);
