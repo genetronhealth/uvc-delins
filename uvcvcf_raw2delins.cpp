@@ -21,7 +21,7 @@
 #include <math.h>
 #include <unistd.h>
 
-#define VERSION3 "0.1.1"
+#define VERSION3 "0.1.2"
 
 const auto MIN(const auto a, const auto b) { return ((a) < (b) ? (a) : (b)); }
 const auto MAX(const auto a, const auto b) { return ((a) > (b) ? (a) : (b)); }

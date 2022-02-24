@@ -25,7 +25,7 @@ mergedvcf="${3}.merged-simple-delins.vcf.gz" # vcf containing both simple and de
 
 bcftools index -f "${rawvcf}" || true
 
-"${UVCdelins}" "${FASTAREF}" "${rawvcf}" -C "${combvcf}" -D "${unhapvcf}" -M wz "${@:4}" 2> "${rawvcf/uvc.vcf.gz/uvc-hap.stderr}" \
+"${UVCdelins}" "${FASTAREF}" "${rawvcf}" -C "${combvcf}" -D "${unhapvcf}" -M wz "${@:4}" 2> "${3}.uvchap-to-delins.stderr" \
      |   bcftools sort - \
      |   bcftools view -Oz -o "${hapvcf}" -
 
