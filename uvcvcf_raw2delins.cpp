@@ -21,7 +21,7 @@
 #include <math.h>
 #include <unistd.h>
 
-#define VERSION3 "0.1.2"
+#define VERSION3 "0.1.3"
 
 const auto MIN(const auto a, const auto b) { return ((a) < (b) ? (a) : (b)); }
 const auto MAX(const auto a, const auto b) { return ((a) > (b) ? (a) : (b)); }
@@ -274,6 +274,47 @@ int main(int argc, char **argv) {
     faidx_t *faidx = fai_load(fastaref);
     htsFile *fp = vcf_open(uvcvcf, "r");
     bcf_hdr_t *bcf_hdr = vcf_hdr_read(fp);
+    
+    bcf_hdr_append(bcf_hdr, "##INFO=<ID=delinsHap,Number=A,Type=String,Description=\"For each delins ALT allele, the value of this tag is the key of the other tag "
+            "used by the upstream SNV/InDel caller to represent linked variants that are phased into one single haplotype candidate. "
+            "In [x]Hap, [x] can be b, c, or c2 if UVC was used upstream. \">");
+    
+    bcf_hdr_append(bcf_hdr, "##INFO=<ID=diPRA,Number=A,Type=String,Description=\"Tumor position_REF_ALT of each delins ALT allele, with the three VCF fields separated by underscore. \">");
+    
+    bcf_hdr_append(bcf_hdr, "##INFO=<ID=diADA,Number=A,Type=Integer,Description=\"Depth of each delins (MNV and/or complex InDel) ALT allele. "
+            "Here, each depth is defined as the depth exactly supporting its corresponding delins haplotype. "
+            "For example, at read level, only reads supporting the exact delins haplotype are counted. \">");
+    
+    bcf_hdr_append(bcf_hdr, "##INFO=<ID=diDPm,Number=A,Type=Integer,Description=\"Total depth of all alleles located at each delins (MNV and/or complex InDel) ALT allele. "
+            "Here, each depth is defined as the minimum depth among the SNV and/or InDel alleles that the delins variant is composed of. "
+            "For example, at read level, reads supporting an individual SNV and/or InDel but not supporting the delins haplotype are still counted. \">");
+    
+    bcf_hdr_append(bcf_hdr, "##INFO=<ID=diDPM,Number=A,Type=Integer,Description=\"Total depth of all alleles located at each delins (MNV and/or complex InDel) ALT allele. "
+            "Here, each depth is defined as the maximum depth among the SNV and/or InDel alleles that the delins variant is composed of. "
+            "For example, at read level, reads supporting an individual SNV and/or InDel but not supporting the delins haplotype are still counted. \">");
+    
+    bcf_hdr_append(bcf_hdr, "##INFO=<ID=diADm,Number=R,Type=Integer,Description=\"Depth of each delins (MVV and/or complex InDel) ALT allele. "
+            "Here, each depth is defined as the minimum delins-allele depth among the individual SNVs and/or InDels that constitute the delins variant. "
+            "For example, at read level, reads supporting an individual SNV and/or InDel but not supporting the delins haplotype are still counted. \">");
+    
+    bcf_hdr_append(bcf_hdr, "##INFO=<ID=diADM,Number=R,Type=Integer,Description=\"Depth of each delins (MNV and/or complex InDel) ALT allele. "
+            "Here, each depth is defined as the maximum delins-allele depth among the individual SNVs and/or InDels that constitute the delins variant. "
+            "For example, at read level, reads supporting an individual SNV and/or InDel but not supporting the delins haplotype are still counted. \">"); // this should rarely be used
+    
+    bcf_hdr_append(bcf_hdr, "##INFO=<ID=diRDm,Number=R,Type=Integer,Description=\"Depth of the reference allele corresponding to each delins (MVV and/or complex InDel) ALT allele. "
+            "Here, each depth is defined as the minimum REF-allele depth among the individual SNVs and/or InDels that constitute the delins variant. "
+            "For example, at read level, reads supporting an individual SNV and/or InDel but not supporting the delins haplotype are still counted. \">");
+    
+    bcf_hdr_append(bcf_hdr, "##INFO=<ID=diRDM,Number=R,Type=Integer,Description=\"Depth of the reference allele corresponding to each delins (MNV and/or complex InDel) ALT allele. "
+            "Here, each depth is defined as the maximum REF-allele depth among the individual SNVs and/or InDels that constitute the delins variant. "
+            "For example, at read level, reads supporting an individual SNV and/or InDel but not supporting the delins haplotype are still counted. \">"); // this should rarely be used
+    
+    bcf_hdr_append(bcf_hdr, "##INFO=<ID=diAD2F,Number=A,Type=Integer,Description=\"Percentage (between 0 and 100) of reads that support the delins variant "
+            "among the individual SNV and/or InDel variants that constitute the delins variant. \">");
+    
+    bcf_hdr_append(bcf_hdr, "##INFO=<ID=diCVQ,Number=A,Type=Integer,Description=\"Combined (by combining SNVs and InDels) variant Quality of each delins ALT variant. \">");
+    bcf_hdr_append(bcf_hdr, "##INFO=<ID=diHVQ,Number=A,Type=Integer,Description=\"Haplotyped (non-SNV and non-InDel small) variant Quality of each delins ALT variant. \">");
+    
     bcf_hdr_append(bcf_hdr, (std::string("##delinsVariantDate=") + timestring).c_str());
     bcf_hdr_append(bcf_hdr, "##delinsVariantCallerVersion=" COMMIT_VERSION "(" COMMIT_DIFF_SH ")");
     std::string vcfcmd = "##delinsVariantCallerCommand=";
@@ -282,17 +323,6 @@ int main(int argc, char **argv) {
     }
     bcf_hdr_append(bcf_hdr, vcfcmd.c_str());
 
-    bcf_hdr_append(bcf_hdr, "##INFO=<ID=tHap,Number=1,Type=String,Description=\"Tumor [x]Hap where [x] can be b, c, or c2.\">");
-    bcf_hdr_append(bcf_hdr, "##INFO=<ID=tPRA,Number=1,Type=String,Description=\"Tumor position_REF_ALT, with the three VCF fields separated by underscore\">");
-    bcf_hdr_append(bcf_hdr, "##INFO=<ID=tDPm,Number=1,Type=Integer,Description=\"Tumor total deduped depth (deprecated, please see CDP1f and CDP1r) taken as the minimum of the decomposed SNV-InDel alleles. \">");
-    bcf_hdr_append(bcf_hdr, "##INFO=<ID=tDPM,Number=1,Type=Integer,Description=\"Tumor total deduped depth (deprecated, please see CDP1f and CDP1r) taken as the maximum of the decomposed SNV-InDel alleles. \">");
-    bcf_hdr_append(bcf_hdr, "##INFO=<ID=tADA,Number=A,Type=Integer,Description=\"Tumor total deduped depth of each MNV or delins variant. \">");
-    bcf_hdr_append(bcf_hdr, "##INFO=<ID=tADRm,Number=R,Type=Integer,Description=\"Tumor deduped depth of each MNV or delins variant by using the minimum depth among the linked SNVs and/or InDels. \">");
-    bcf_hdr_append(bcf_hdr, "##INFO=<ID=tADRM,Number=R,Type=Integer,Description=\"Tumor deduped depth of each MNV or delins variant by using the maximum depth among the linked SNVs and/or InDels (deprecated, please see cDP1f and cDP1r) (WARNING: use this field with caution because it should not be used under normal circumstances!). \">");
-    bcf_hdr_append(bcf_hdr, "##INFO=<ID=tAD2F,Number=A,Type=Integer,Description=\"Percentage (100x) of reads that support the delins variant among the decomposed non-delins variants. \">");
-    bcf_hdr_append(bcf_hdr, "##INFO=<ID=tCVQ,Number=A,Type=Integer,Description=\"Combined (by combining SNVs and InDels) variant Quality. \">");
-    bcf_hdr_append(bcf_hdr, "##INFO=<ID=tHVQ,Number=A,Type=Integer,Description=\"Haplotyped (non-SNV and non-InDel small) variant Quality. \">");
-    
     bcf_hdr_t *bcf_hdr2 = bcf_hdr_dup(bcf_hdr);
     // int set_samples_ret = bcf_hdr_set_samples(bcf_hdr, bcf_hdr->samples[bcf_hdr->nsamples_ori - 1], false);
     int set_samples_ret1 = bcf_hdr_set_samples(bcf_hdr2, NULL, false);
@@ -317,11 +347,20 @@ int main(int argc, char **argv) {
     int vcf_nseqs = -1;
     const char **seqnames = bcf_hdr_seqnames(bcf_hdr, &vcf_nseqs);
     
-    assert (faidx_nseq(faidx) == vcf_nseqs);
+    if (faidx_nseq(faidx) != vcf_nseqs) {
+        fprintf(stderr, "FATAL_ERROR : the FASTA file %s contains %d reference sequences whereas the VCF file %s contains %d reference sequences. "
+                "Please ensure that both FASTA and VCF files contain the same number of reference sequences. \n", fastaref, faidx_nseq(faidx), uvcvcf, vcf_nseqs);
+        exit (1);
+    }
     
     for (int i = 0; i < faidx_nseq(faidx); i++) {
         const char *seqname = faidx_iseq(faidx, i);
-        assert(!strcmp(seqname, seqnames[i])); 
+        if (strcmp(seqname, seqnames[i])) {
+            fprintf(stderr, "FATAL_ERROR : the FASTA file %s contains the reference sequence with ID %s "
+                    "whereas the VCF file %s contains the reference sequence with ID %s when comparing the %d-th reference sequence. "
+                    "Please ensure that both FASTA and VCF files contain exactly the same list of reference sequences. \n", fastaref, seqname, uvcvcf, seqnames[i], i);
+            exit (2);
+        }
     }
     
     std::ifstream bedstream;
@@ -608,19 +647,21 @@ int main(int argc, char **argv) {
                         }
                         double hv_qual = (powlaw_exponent * delinsvarfrac_ratio_phred); // c and h : combined and haplotyped combined
                         std::cout << tname << "\t" << (cv_begpos + 1) << "\t.\t" << cv_ref << "\t" << cv_alt 
-                            << "\t" << std::to_string(MIN(cv_qual, hv_qual)) << "\t.\t" << "tHap=" << cHap_string 
-                            << ";tPRA="
+                            << "\t" << std::to_string(MIN(cv_qual, hv_qual)) << "\t.\t" << "delinsHap=" << cHap_string 
+                            << ";diPRA="
                             << (std::get<0>(pos_ref_alt_tup_from_vcfline)) << "_"
                             << (std::get<1>(pos_ref_alt_tup_from_vcfline)) << "_"
                             << (std::get<2>(pos_ref_alt_tup_from_vcfline))
-                            << ";tDPm=" << tDPmin
-                            << ";tDPM=" << tDPmax
-                            << ";tADA=" << delinsvarDP
-                            << ";tADRm=" << other_join(tADRmin, ",")
-                            << ";tADRM=" << other_join(tADRmax, ",")
-                            << ";tAD2F=" << (tADRmin[1] * 100 / MAX(1, tADRmax[1]))
-                            << ";tHVQ=" << hv_qual
-                            << ";tCVQ=" << cv_qual
+                            << ";diADA=" << delinsvarDP
+                            << ";diDPm=" << tDPmin
+                            << ";diDPM=" << tDPmax
+                            << ";diADm=" << tADRmin[1]
+                            << ";diADM=" << tADRmax[1] 
+                            << ";diRDm=" << tADRmin[0] 
+                            << ";diRDM=" << tADRmax[0]
+                            << ";diAD2F=" << (tADRmin[1] * 100 / MAX(1, tADRmax[1]))
+                            << ";diHVQ=" << hv_qual
+                            << ";diCVQ=" << cv_qual
                             << "\n";
                         for (auto it = delinsvar_3tups.begin(); it != delinsvar_3tups.end(); ) {
                             int endpos = std::get<0>(*it) + (int)MAX(std::get<1>(*it).size(), std::get<2>(*it).size());
