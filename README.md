@@ -8,7 +8,7 @@ In fact, UVC-delins can process any VCF file with variant records containing par
 
 The installation requirements for UVC-delins are the same as these for UVC (for the requirements for UVC, please check https://github.com/genetronhealth/uvc)
 
-In sum, UVC requires BASH 4.0+ (4.0 is the minimum version required) and a compiler that supports the C++14 standard. The Makefile in this directory compiles with g++, but the Makefile can be easily modified to use another compiler instead of g++ (for example, clang). To install from scratch, please run: (./install-dependencies.sh && make clean && make all -j4 && make deploy).
+In sum, UVC-delins requires BASH 4.0+ (4.0 is the minimum version required) and a compiler that supports the C++14 standard. The Makefile in this directory compiles with g++, but the Makefile can be easily modified to use another compiler instead of g++ (for example, clang). To install from scratch, please run: (./install-dependencies.sh && make clean && make all -j4 && make deploy).
 
 In total, the installation for UVC-delins should take about 5 minutes.
 
