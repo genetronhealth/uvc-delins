@@ -23,10 +23,123 @@
 
 #define VERSION3 "0.1.3"
 
-const auto MIN(const auto a, const auto b) { return ((a) < (b) ? (a) : (b)); }
-const auto MAX(const auto a, const auto b) { return ((a) > (b) ? (a) : (b)); }
-const auto UPDATE_MIN(auto & a, const auto b) { a = MIN(a, b); }
-const auto UPDATE_MAX(auto & a, const auto b) { a = MAX(a, b); }
+#define BCF_NUM_A (-1)
+#define BCF_NUM_R (-2)
+#define BCF_NUM_G (-3)
+#define BCF_NUM_D (-4)
+
+#define BCF_TYPE_FLAG 0
+#define BCF_TYPE_INTEGER 1
+#define BCF_TYPE_FLOAT 2
+#define BCF_TYPE_STRING 3
+
+struct BcfInfo {
+    const std::string ID;
+    const int number;
+    const int type;
+    const std::string description;
+    
+    BcfInfo(std::string aID, int anumber, int atype, std::string adescription) : ID(aID), number(anumber), type(atype), description(adescription) {};
+    
+    const std::string to_header_string() const {
+        std::string string_number = (
+                   (BCF_NUM_A == number) ? "A" 
+                : ((BCF_NUM_R == number) ? "R" 
+                : ((BCF_NUM_G == number) ? "G" 
+                : ((BCF_NUM_D == number) ? "D" 
+                : (std::to_string(number))))));
+        std::string string_type = (
+                   (BCF_TYPE_FLAG == type) ? "Flag" 
+                : ((BCF_TYPE_INTEGER == type) ? "Integer" 
+                : ((BCF_TYPE_FLOAT == type) ? "Float" 
+                : ((BCF_TYPE_STRING == type) ? "String" : ""))));
+        return std::string("##INFO=<ID=") + ID + ",Number=" + string_number  + ",Type=" + string_type + ",Description=\"" + description + "\">"; 
+    }
+};
+
+enum BcfInfoTag {
+    delinsHap,
+    diPRA,
+    diADA,
+    diDPm,
+    diDPM,
+    diADm,
+    diADM,
+    diRDm,
+    diRDM,
+    diAD2F,
+    diCVQ,
+    diHVQ
+};
+
+const BcfInfo BCF_INFO_LIST[] = {
+        
+        [delinsHap] = BcfInfo(
+        "delinsHap", BCF_NUM_A, BCF_TYPE_STRING,
+            "For each delins ALT allele, the value of this tag is the key of the other tag "
+            "used by the upstream SNV/InDel caller to represent linked variants that are phased into one single haplotype candidate. "
+            "In [x]Hap, [x] can be b, c, or c2 if UVC was used upstream. "),
+    
+        [diPRA] = BcfInfo(
+        "diPRA",     BCF_NUM_A, BCF_TYPE_STRING, 
+            "Tumor position_REF_ALT of each delins ALT allele, with the three VCF fields separated by underscore. "),
+    
+        [diADA] = BcfInfo(
+        "diADA",     BCF_NUM_A, BCF_TYPE_INTEGER, 
+            "Depth of each delins (MNV and/or complex InDel) ALT allele. "
+            "Here, each depth is defined as the depth exactly supporting its corresponding delins haplotype. "
+            "For example, at read level, only reads supporting the exact delins haplotype are counted. "),
+
+        [diDPm] = BcfInfo(
+        "diDPm",     BCF_NUM_A, BCF_TYPE_INTEGER, 
+            "Total depth of all alleles located at each delins (MNV and/or complex InDel) ALT allele. "
+            "Here, each depth is defined as the minimum depth among the SNV and/or InDel alleles that the delins variant is composed of. "
+            "For example, at read level, reads supporting an individual SNV and/or InDel but not supporting the delins haplotype are still counted. "),
+                
+        [diDPM] = BcfInfo(
+        "diDPM",     BCF_NUM_A, BCF_TYPE_INTEGER,
+            "Total depth of all alleles located at each delins (MNV and/or complex InDel) ALT allele. "
+            "Here, each depth is defined as the maximum depth among the SNV and/or InDel alleles that the delins variant is composed of. "
+            "For example, at read level, reads supporting an individual SNV and/or InDel but not supporting the delins haplotype are still counted. "),
+    
+        [diADm] = BcfInfo(
+        "diADm",     BCF_NUM_A, BCF_TYPE_INTEGER,
+            "Depth of each delins (MVV and/or complex InDel) ALT allele. "
+            "Here, each depth is defined as the minimum delins-allele depth among the individual SNVs and/or InDels that constitute the delins variant. "
+            "For example, at read level, reads supporting an individual SNV and/or InDel but not supporting the delins haplotype are still counted. "),
+    
+        [diADM] = BcfInfo(
+        "diADM",     BCF_NUM_A, BCF_TYPE_INTEGER,
+            "Depth of each delins (MNV and/or complex InDel) ALT allele. "
+            "Here, each depth is defined as the maximum delins-allele depth among the individual SNVs and/or InDels that constitute the delins variant. "
+            "For example, at read level, reads supporting an individual SNV and/or InDel but not supporting the delins haplotype are still counted. "), // this should rarely be used
+                
+        [diRDm] = BcfInfo(
+        "diRDm",     BCF_NUM_A, BCF_TYPE_INTEGER,
+            "Depth of the reference allele corresponding to each delins (MVV and/or complex InDel) ALT allele. "
+            "Here, each depth is defined as the minimum REF-allele depth among the individual SNVs and/or InDels that constitute the delins variant. "
+            "For example, at read level, reads supporting an individual SNV and/or InDel but not supporting the delins haplotype are still counted. "),
+        
+        [diRDM] = BcfInfo(
+        "diRDM",     BCF_NUM_A, BCF_TYPE_INTEGER,
+            "Depth of the reference allele corresponding to each delins (MNV and/or complex InDel) ALT allele. "
+            "Here, each depth is defined as the maximum REF-allele depth among the individual SNVs and/or InDels that constitute the delins variant. "
+            "For example, at read level, reads supporting an individual SNV and/or InDel but not supporting the delins haplotype are still counted. "), // this should rarely be used
+    
+        [diAD2F] = BcfInfo(
+        "diAD2F",    BCF_NUM_A, BCF_TYPE_INTEGER, 
+            "Percentage (between 0 and 100) of reads that support the delins variant "
+            "among the individual SNV and/or InDel variants that constitute the delins variant. "),
+    
+        [diCVQ] = BcfInfo(
+        "diCVQ",     BCF_NUM_A, BCF_TYPE_INTEGER, 
+            "Combined (by combining SNVs and InDels) variant Quality of each delins ALT variant. "),
+    
+        [diHVQ] = BcfInfo(
+        "diHVQ",     BCF_NUM_A, BCF_TYPE_INTEGER, 
+            "Haplotyped (non-SNV and non-InDel small) variant Quality of each delins ALT variant. "),
+};
+
 
 class VariantInfo {
 public:
@@ -46,6 +159,11 @@ public:
         return 0;
     }
 };
+
+const auto MIN(const auto a, const auto b) { return ((a) < (b) ? (a) : (b)); }
+const auto MAX(const auto a, const auto b) { return ((a) > (b) ? (a) : (b)); }
+const auto UPDATE_MIN(auto & a, const auto b) { a = MIN(a, b); }
+const auto UPDATE_MAX(auto & a, const auto b) { a = MAX(a, b); }
 
 template <class T>
 std::string
@@ -170,7 +288,7 @@ const double  POWLAW_EXPONENT = 3.0;
 
 void help(int argc, char **argv) {
     fprintf(stderr, "Program %s version %s-%s ( %s )\n", argv[0], VERSION3, COMMIT_VERSION, COMMIT_DIFF_SH);
-    fprintf(stderr, "  This program combines simple variants into delins variants. \n");
+    fprintf(stderr, "  This program combines simple variants into delins variants and prints the result VCF to stdout. \n");
     
     fprintf(stderr, "Usage: %s <REFERENCE-FASTA> <UVC-VCF-GZ> \n", argv[0]);
     fprintf(stderr, "Optional parameters:\n");
@@ -199,6 +317,10 @@ void help(int argc, char **argv) {
     fprintf(stderr, " -R boolean flag indicating if right-trimming of bases occurring in both REF and ALT should be disabled [default to false].\n");
     fprintf(stderr, " -S boolean flag indicating if short-tandem-repeats (STRs) should be considered in the merging of simple variants [default to false].\n");
     
+    fprintf(stderr, "\nNote: the output VCF (which is printed to stdout) has the following INFO tags\n");
+    for (const auto bcf_info : BCF_INFO_LIST) {
+        fprintf(stderr, "%s\n", bcf_info.to_header_string().c_str());
+    }
     exit(-1);
 }
 
@@ -275,45 +397,50 @@ int main(int argc, char **argv) {
     htsFile *fp = vcf_open(uvcvcf, "r");
     bcf_hdr_t *bcf_hdr = vcf_hdr_read(fp);
     
+    for (const auto bcf_info : BCF_INFO_LIST) {
+        bcf_hdr_append(bcf_hdr, bcf_info.to_header_string().c_str());
+    }
+    /*
     bcf_hdr_append(bcf_hdr, "##INFO=<ID=delinsHap,Number=A,Type=String,Description=\"For each delins ALT allele, the value of this tag is the key of the other tag "
             "used by the upstream SNV/InDel caller to represent linked variants that are phased into one single haplotype candidate. "
             "In [x]Hap, [x] can be b, c, or c2 if UVC was used upstream. \">");
     
     bcf_hdr_append(bcf_hdr, "##INFO=<ID=diPRA,Number=A,Type=String,Description=\"Tumor position_REF_ALT of each delins ALT allele, with the three VCF fields separated by underscore. \">");
     
-    bcf_hdr_append(bcf_hdr, "##INFO=<ID=diADA,Number=A,Type=Integer,Description=\"Depth of each delins (MNV and/or complex InDel) ALT allele. "
+    bcf_hdr_append(bcf_hdr, "##INFO=<ID=diADA,Number=A,BCF_TYPE_INTEGER,Description=\"Depth of each delins (MNV and/or complex InDel) ALT allele. "
             "Here, each depth is defined as the depth exactly supporting its corresponding delins haplotype. "
             "For example, at read level, only reads supporting the exact delins haplotype are counted. \">");
     
-    bcf_hdr_append(bcf_hdr, "##INFO=<ID=diDPm,Number=A,Type=Integer,Description=\"Total depth of all alleles located at each delins (MNV and/or complex InDel) ALT allele. "
+    bcf_hdr_append(bcf_hdr, "##INFO=<ID=diDPm,Number=A,BCF_TYPE_INTEGER,Description=\"Total depth of all alleles located at each delins (MNV and/or complex InDel) ALT allele. "
             "Here, each depth is defined as the minimum depth among the SNV and/or InDel alleles that the delins variant is composed of. "
             "For example, at read level, reads supporting an individual SNV and/or InDel but not supporting the delins haplotype are still counted. \">");
     
-    bcf_hdr_append(bcf_hdr, "##INFO=<ID=diDPM,Number=A,Type=Integer,Description=\"Total depth of all alleles located at each delins (MNV and/or complex InDel) ALT allele. "
+    bcf_hdr_append(bcf_hdr, "##INFO=<ID=diDPM,Number=A,BCF_TYPE_INTEGER,Description=\"Total depth of all alleles located at each delins (MNV and/or complex InDel) ALT allele. "
             "Here, each depth is defined as the maximum depth among the SNV and/or InDel alleles that the delins variant is composed of. "
             "For example, at read level, reads supporting an individual SNV and/or InDel but not supporting the delins haplotype are still counted. \">");
     
-    bcf_hdr_append(bcf_hdr, "##INFO=<ID=diADm,Number=R,Type=Integer,Description=\"Depth of each delins (MVV and/or complex InDel) ALT allele. "
+    bcf_hdr_append(bcf_hdr, "##INFO=<ID=diADm,BCF_NUM_R,BCF_TYPE_INTEGER,Description=\"Depth of each delins (MVV and/or complex InDel) ALT allele. "
             "Here, each depth is defined as the minimum delins-allele depth among the individual SNVs and/or InDels that constitute the delins variant. "
             "For example, at read level, reads supporting an individual SNV and/or InDel but not supporting the delins haplotype are still counted. \">");
     
-    bcf_hdr_append(bcf_hdr, "##INFO=<ID=diADM,Number=R,Type=Integer,Description=\"Depth of each delins (MNV and/or complex InDel) ALT allele. "
+    bcf_hdr_append(bcf_hdr, "##INFO=<ID=diADM,BCF_NUM_R,BCF_TYPE_INTEGER,Description=\"Depth of each delins (MNV and/or complex InDel) ALT allele. "
             "Here, each depth is defined as the maximum delins-allele depth among the individual SNVs and/or InDels that constitute the delins variant. "
             "For example, at read level, reads supporting an individual SNV and/or InDel but not supporting the delins haplotype are still counted. \">"); // this should rarely be used
     
-    bcf_hdr_append(bcf_hdr, "##INFO=<ID=diRDm,Number=R,Type=Integer,Description=\"Depth of the reference allele corresponding to each delins (MVV and/or complex InDel) ALT allele. "
+    bcf_hdr_append(bcf_hdr, "##INFO=<ID=diRDm,BCF_NUM_R,BCF_TYPE_INTEGER,Description=\"Depth of the reference allele corresponding to each delins (MVV and/or complex InDel) ALT allele. "
             "Here, each depth is defined as the minimum REF-allele depth among the individual SNVs and/or InDels that constitute the delins variant. "
             "For example, at read level, reads supporting an individual SNV and/or InDel but not supporting the delins haplotype are still counted. \">");
     
-    bcf_hdr_append(bcf_hdr, "##INFO=<ID=diRDM,Number=R,Type=Integer,Description=\"Depth of the reference allele corresponding to each delins (MNV and/or complex InDel) ALT allele. "
+    bcf_hdr_append(bcf_hdr, "##INFO=<ID=diRDM,BCF_NUM_R,BCF_TYPE_INTEGER,Description=\"Depth of the reference allele corresponding to each delins (MNV and/or complex InDel) ALT allele. "
             "Here, each depth is defined as the maximum REF-allele depth among the individual SNVs and/or InDels that constitute the delins variant. "
             "For example, at read level, reads supporting an individual SNV and/or InDel but not supporting the delins haplotype are still counted. \">"); // this should rarely be used
     
-    bcf_hdr_append(bcf_hdr, "##INFO=<ID=diAD2F,Number=A,Type=Integer,Description=\"Percentage (between 0 and 100) of reads that support the delins variant "
+    bcf_hdr_append(bcf_hdr, "##INFO=<ID=diAD2F,Number=A,BCF_TYPE_INTEGER,Description=\"Percentage (between 0 and 100) of reads that support the delins variant "
             "among the individual SNV and/or InDel variants that constitute the delins variant. \">");
     
-    bcf_hdr_append(bcf_hdr, "##INFO=<ID=diCVQ,Number=A,Type=Integer,Description=\"Combined (by combining SNVs and InDels) variant Quality of each delins ALT variant. \">");
-    bcf_hdr_append(bcf_hdr, "##INFO=<ID=diHVQ,Number=A,Type=Integer,Description=\"Haplotyped (non-SNV and non-InDel small) variant Quality of each delins ALT variant. \">");
+    bcf_hdr_append(bcf_hdr, "##INFO=<ID=diCVQ,Number=A,BCF_TYPE_INTEGER,Description=\"Combined (by combining SNVs and InDels) variant Quality of each delins ALT variant. \">");
+    bcf_hdr_append(bcf_hdr, "##INFO=<ID=diHVQ,Number=A,BCF_TYPE_INTEGER,Description=\"Haplotyped (non-SNV and non-InDel small) variant Quality of each delins ALT variant. \">");
+    */
     
     bcf_hdr_append(bcf_hdr, (std::string("##delinsVariantDate=") + timestring).c_str());
     bcf_hdr_append(bcf_hdr, "##delinsVariantCallerVersion=" COMMIT_VERSION "(" COMMIT_DIFF_SH ")");
@@ -646,22 +773,28 @@ int main(int argc, char **argv) {
                             cv_alt = cv_alt.substr(0, cv_alt.size() - endpos_dec);
                         }
                         double hv_qual = (powlaw_exponent * delinsvarfrac_ratio_phred); // c and h : combined and haplotyped combined
-                        std::cout << tname << "\t" << (cv_begpos + 1) << "\t.\t" << cv_ref << "\t" << cv_alt 
-                            << "\t" << std::to_string(MIN(cv_qual, hv_qual)) << "\t.\t" << "delinsHap=" << cHap_string 
-                            << ";diPRA="
-                            << (std::get<0>(pos_ref_alt_tup_from_vcfline)) << "_"
-                            << (std::get<1>(pos_ref_alt_tup_from_vcfline)) << "_"
-                            << (std::get<2>(pos_ref_alt_tup_from_vcfline))
-                            << ";diADA=" << delinsvarDP
-                            << ";diDPm=" << tDPmin
-                            << ";diDPM=" << tDPmax
-                            << ";diADm=" << tADRmin[1]
-                            << ";diADM=" << tADRmax[1] 
-                            << ";diRDm=" << tADRmin[0] 
-                            << ";diRDM=" << tADRmax[0]
-                            << ";diAD2F=" << (tADRmin[1] * 100 / MAX(1, tADRmax[1]))
-                            << ";diHVQ=" << hv_qual
-                            << ";diCVQ=" << cv_qual
+                        std::cout 
+                            << tname 
+                            << "\t" << (cv_begpos + 1) 
+                            << "\t.\t" << cv_ref 
+                            << "\t" << cv_alt 
+                            << "\t" << std::to_string(MIN(cv_qual, hv_qual)) 
+                            << "\t.\t" // FILTER
+                            <<        BCF_INFO_LIST[delinsHap].ID << "=" << cHap_string 
+                            << ";" << BCF_INFO_LIST[diPRA].ID     << "="
+                                << (std::get<0>(pos_ref_alt_tup_from_vcfline)) << "_"
+                                << (std::get<1>(pos_ref_alt_tup_from_vcfline)) << "_"
+                                << (std::get<2>(pos_ref_alt_tup_from_vcfline))
+                            << ";" << BCF_INFO_LIST[diADA].ID    << "=" << delinsvarDP
+                            << ";" << BCF_INFO_LIST[diDPm].ID    << "=" << tDPmin
+                            << ";" << BCF_INFO_LIST[diDPM].ID    << "=" << tDPmax
+                            << ";" << BCF_INFO_LIST[diADm].ID    << "=" << tADRmin[1]
+                            << ";" << BCF_INFO_LIST[diADM].ID    << "=" << tADRmax[1] 
+                            << ";" << BCF_INFO_LIST[diRDm].ID    << "=" << tADRmin[0] 
+                            << ";" << BCF_INFO_LIST[diRDM].ID    << "=" << tADRmax[0]
+                            << ";" << BCF_INFO_LIST[diAD2F].ID   << "=" << (tADRmin[1] * 100 / MAX(1, tADRmax[1]))
+                            << ";" << BCF_INFO_LIST[diHVQ].ID    << "=" << hv_qual
+                            << ";" << BCF_INFO_LIST[diCVQ].ID    << "=" << cv_qual
                             << "\n";
                         for (auto it = delinsvar_3tups.begin(); it != delinsvar_3tups.end(); ) {
                             int endpos = std::get<0>(*it) + (int)MAX(std::get<1>(*it).size(), std::get<2>(*it).size());
