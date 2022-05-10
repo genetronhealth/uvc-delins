@@ -21,7 +21,7 @@
 #include <math.h>
 #include <unistd.h>
 
-#define VERSION3 "0.1.3"
+#define VERSION3 "0.1.4"
 
 #define BCF_NUM_A (-1)
 #define BCF_NUM_R (-2)
