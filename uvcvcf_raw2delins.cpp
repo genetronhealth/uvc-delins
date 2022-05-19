@@ -21,7 +21,7 @@
 #include <math.h>
 #include <unistd.h>
 
-#define VERSION3 "0.1.4"
+#define VERSION3 "0.1.5"
 
 #define BCF_NUM_A (-1)
 #define BCF_NUM_R (-2)
@@ -287,7 +287,7 @@ const int DEFAULT_CE = 1; // (SNV to InDel gap-ext ) and (InDel to InDel gap-ext
 const double  POWLAW_EXPONENT = 3.0;
 
 void help(int argc, char **argv) {
-    fprintf(stderr, "Program %s version %s-%s ( %s )\n", argv[0], VERSION3, COMMIT_VERSION, COMMIT_DIFF_SH);
+    fprintf(stderr, "Program %s version %s.%s ( %s )\n", argv[0], VERSION3, COMMIT_VERSION, COMMIT_DIFF_SH);
     fprintf(stderr, "  This program combines simple variants into delins variants and prints the result VCF to stdout. \n");
     
     fprintf(stderr, "Usage: %s <REFERENCE-FASTA> <UVC-VCF-GZ> \n", argv[0]);
@@ -317,11 +317,13 @@ void help(int argc, char **argv) {
     fprintf(stderr, " -R boolean flag indicating if right-trimming of bases occurring in both REF and ALT should be disabled [default to false].\n");
     fprintf(stderr, " -S boolean flag indicating if short-tandem-repeats (STRs) should be considered in the merging of simple variants [default to false].\n");
     
+    fprintf(stderr, " -h print this usage help then exit with zero.\n");
+    fprintf(stderr, " -v print version number then exit with zero.\n");
+    
     fprintf(stderr, "\nNote: the output VCF (which is printed to stdout) has the following INFO tags\n");
     for (const auto bcf_info : BCF_INFO_LIST) {
         fprintf(stderr, "%s\n", bcf_info.to_header_string().c_str());
     }
-    exit(-1);
 }
 
 int main(int argc, char **argv) {
@@ -357,7 +359,7 @@ int main(int argc, char **argv) {
     const char *non_delins_outvcfname = NULL;
     const char *defaultMode = DEFAULT_M;
     int opt = -1;
-    while ((opt = getopt(argc, argv, "2:3:c:d:f:p:A:B:C:D:E:M:H:O:T:ILRS")) != -1) {
+    while ((opt = getopt(argc, argv, "2:3:c:d:f:p:A:B:C:D:E:M:H:O:T:ILRShv")) != -1) {
         switch (opt) {
             case 'c': defaultC = atof(optarg); break; // delins2simple_var_frac_above_which_discard_simple 
             case '2': defaultC2 = atof(optarg); break;
@@ -382,7 +384,9 @@ int main(int argc, char **argv) {
             case 'R': disable_right_trim = true; break;
             case 'S': enable_short_tandem_repeat_adjust = true; break;
             
-            default: help(argc, argv);
+            case 'h': help(argc, argv); exit(0);
+            case 'v': printf("UVC-delins %s.%s ( %s )\n", VERSION3, COMMIT_VERSION, COMMIT_DIFF_SH); exit(0);
+            default: help(argc, argv); exit(1);
         }
     }
     for (int posidx = 0; optind < argc; optind++, posidx++) {
@@ -390,7 +394,7 @@ int main(int argc, char **argv) {
         else if (1 == posidx) { uvcvcf = argv[optind]; }
     }
     if (NULL == fastaref || NULL == uvcvcf) {
-        help(argc, argv);
+        help(argc, argv); exit(2);
     }
     
     faidx_t *faidx = fai_load(fastaref);
@@ -563,7 +567,8 @@ int main(int argc, char **argv) {
             
             const auto pos_ref_alt_begpos_endpos_tup = std::make_tuple(line->pos, std::string(line->d.allele[0]), std::string(line->d.allele[1]), posleft, posright,
                     VariantInfo(line->qual, tbDP, tDP, tADR));
-            assert (tDP > 0 || !fprintf(stderr, "%d > 0 failed for rid - %d pos - %ld ref - %s alt - %s!\n", tDP, line->rid, line->pos, line->d.allele[0], line->d.allele[1]));
+            // This assertion may fail (for example, SRR12100766 - hs37d5 21645705 . T C) due to corner-case variant-call and is therefore disabled. 
+            // assert (tDP > 0 || !fprintf(stderr, "%d > 0 failed for rid - %d pos - %ld ref - %s alt - %s!\n", tDP, line->rid, line->pos, line->d.allele[0], line->d.allele[1]));
             for (int j = sampleidx; j < nsamples; j++) {
                 std::vector<std::string> cHap_substrs = cHapString_to_cHapSubstrs(bcfstring[j]);
                 for (const std::string & cHap_string : cHap_substrs) {
