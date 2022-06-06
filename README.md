@@ -24,7 +24,7 @@ The usage help for uvcvcf-raw2delins-all.sh refers to the executable uvcvcf-raw2
 The binary executable uvcvcf-raw2delins performs the actual calling of delins variants by combining SNV(s) and InDel(s) that are near each other from the same haplotype, where the SNV(s) and InDel(s) that are not from the same haplotype are still kept.  
 The script uvcvcf-raw2delins-all.sh simply wraps around the binary executable uvcvcf-raw2delins.
 
-In sum, given an input BAM file, the command to generate VCF with delins variants (which include MNVs and complex InDels) along with SNVs and simple InDels are as follows (INDEXED_REFERENCE_FASTA should be indexed by bwa index and samtools faidx): 
+In sum, given an input BAM file, the command to generate VCF with delins variants (which include MNVs and complex InDels) along with SNVs and simple InDels are as follows (INDEXED_REFERENCE_FASTA should be already pre-indexed by bwa index and samtools faidx): 
 
 UVC_INSTALL_DIRECTORY/uvc1 -f INDEXED_REFERENCE_FASTA -o SNV_INDEL_VCF_GZ INPUT_BAM && UVC_DELINS_INSTALL_DIRECTORY/uvcvcf-raw2delins-all.sh INDEXED_REFERENCE_FASTA SNV_INDEL_VCF_GZ DELINS_VARIANT_VCF_PREFIX
 
