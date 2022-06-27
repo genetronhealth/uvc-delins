@@ -21,7 +21,7 @@
 #include <math.h>
 #include <unistd.h>
 
-#define VERSION3 "0.1.5"
+#define VERSION3 "0.1.6"
 
 #define BCF_NUM_A (-1)
 #define BCF_NUM_R (-2)
@@ -144,13 +144,9 @@ const BcfInfo BCF_INFO_LIST[] = {
 class VariantInfo {
 public:
     float qual;
-    int tbDP;
-    int tDP;
     std::array<int, 2> tADR;
-    VariantInfo(float q, int dp1, int dp2, std::array<int, 2> tADR1) {
+    VariantInfo(float q, std::array<int, 2> tADR1) {
         qual = q;
-        tbDP = dp1;
-        tDP = dp2;
         for (int i = 0; i < 2; i++) {
             tADR[i] = tADR1[i];
         }
@@ -308,6 +304,7 @@ void help(int argc, char **argv) {
     fprintf(stderr, " -D the VCF file containing simple variants kept after constructing delins variants [default to NULL, generating no output].\n");
     fprintf(stderr, " -E from BWA: gap extension for the maximum number of bases between InDel and SNV/InDel to be considered as linked [default to %d].\n", DEFAULT_CE);
     fprintf(stderr, " -H FORMAT tag in the UVC-VCF-GZ file used to contain the haplotype information [default to %s].\n", DEFAULT_H);
+    
     fprintf(stderr, " -M mode for the output VCF file containing simple variants that are entirely parts of some delins variant [default to %s].\n", DEFAULT_M);
     fprintf(stderr, " -O from BWA: gap opening for the maximum number of bases between InDel and SNV/InDel to be considered as linked [default to %d].\n", DEFAULT_CO);
     fprintf(stderr, " -T the bed file that overrides the -d, -f, -B -O, and -E parameters in the defined regions [default to None].\n");
@@ -558,15 +555,12 @@ int main(int argc, char **argv) {
             }
             string_valsize = bcf_get_format_string(bcf_hdr, line, defaultH1, &bcfstring, &string_ndst_val);
             assert (1 <= string_valsize || !fprintf(stderr, "The size of cHap is %d instead of at least 1!\n", string_valsize));
-            valsize = bcf_get_info_int32(bcf_hdr, line, "tbDP", &bcfints, &ndst_val);
-            int tbDP = bcfints[0];
-            valsize = bcf_get_info_int32(bcf_hdr, line, "tDP", &bcfints, &ndst_val);
-            int tDP = bcfints[0];
-            valsize = bcf_get_info_int32(bcf_hdr, line, "tADR", &bcfints, &ndst_val);
+            
+            valsize = bcf_get_format_int32(bcf_hdr, line, defaultAD, &bcfints, &ndst_val);
             std::array<int, 2> tADR = std::array<int, 2>({bcfints[0], bcfints[1]});
             
             const auto pos_ref_alt_begpos_endpos_tup = std::make_tuple(line->pos, std::string(line->d.allele[0]), std::string(line->d.allele[1]), posleft, posright,
-                    VariantInfo(line->qual, tbDP, tDP, tADR));
+                    VariantInfo(line->qual, tADR));
             // This assertion may fail (for example, SRR12100766 - hs37d5 21645705 . T C) due to corner-case variant-call and is therefore disabled. 
             // assert (tDP > 0 || !fprintf(stderr, "%d > 0 failed for rid - %d pos - %ld ref - %s alt - %s!\n", tDP, line->rid, line->pos, line->d.allele[0], line->d.allele[1]));
             for (int j = sampleidx; j < nsamples; j++) {
@@ -697,16 +691,17 @@ int main(int argc, char **argv) {
                             UPDATE_MIN(delinsvar_begpos, pos);
                             UPDATE_MAX(delinsvar_endpos, endpos);
                             float qual = std::get<3>(pos_ref_alt_tup).qual;
-                            int tDP = std::get<3>(pos_ref_alt_tup).tDP;
+                            // int tDP = std::get<3>(pos_ref_alt_tup).tDP;
                             const auto &tADR = std::get<3>(pos_ref_alt_tup).tADR;
-                            
+                            assert(tADR.size() == 2);
+                            int tDP = (tADR[0] + tADR[1]);
                             UPDATE_MIN(tDPmin, tDP);
                             UPDATE_MAX(tDPmax, tDP);
                             for (int j = 0; j < 2; j++) {
                                 UPDATE_MIN(tADRmin[j], tADR[j]);
                                 UPDATE_MAX(tADRmax[j], tADR[j]);
                                 assert (tADR[1] <= tDP);
-                                assert (delinsvarDP <= tADR[1]);
+                                assert ((delinsvarDP <= tADR[1]) || !fprintf(stderr, "%d <= %d failed for tid %d pos %ld!", delinsvarDP, tADR[1], line->rid, line->pos));
                             }
                             errmodel_delinsvarfrac_phred += 10.0 / log(10.0) * log((double)(tADR[1] - delinsvarDP + 0.5) / (double)(tDP + 1.0));
                             cv_qual = MIN(qual, cv_qual);
