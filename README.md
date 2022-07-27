@@ -16,6 +16,8 @@ In sum, UVC-delins requires BASH 4.0+ (4.0 is the minimum version required) and 
 
 In total, the installation for UVC-delins should take about 5 minutes.
 
+A docker image of UVC-delins along with UVC is provided at: https://hub.docker.com/r/genetronhealth/gcc-0-6-0-uvc-0-8-0-delins-0-1-5
+
 # How to use
 
 The script uvcvcf-raw2delins-all.sh in the bin directory is the main executable that generates all VCF files related to the calling of delins variants.
@@ -42,9 +44,9 @@ For more information, please check the wiki.
 
 ## Publication
 
-TODO
+In progress
 
 ## Patent
 
-TODO
+In progress
 
