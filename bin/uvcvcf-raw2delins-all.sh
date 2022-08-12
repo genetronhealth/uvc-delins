@@ -8,7 +8,7 @@ if [ "${1}" = '-h' -o $# -lt 3 ]; then
     printf "    .consumed-simple-with-fmt.vcf.gz : vcf containing simple variants that should be removed because they are entirely parts of some complex variants. \n"
     printf "    .leftover-simple-with-fmt.vcf.gz : vcf containing simple variants that are not consumed by any complex variant. \n"
     printf "    .generated-delins.vcf.gz         : vcf containing delins variants combined from simple variants. \n"
-    printf "    .leftover-simple.vcf.gz          : same as unhapvcf but with sample format data removed. \n"
+    printf "    .leftover-simple.vcf.gz          : same as .leftover-simple-with-fmt.vcf.gz but with sample format data removed. \n"
     printf "    .merged-simple-delins.vcf.gz     : vcf containing both simple and delins variants. \n"
     exit -1
 fi
