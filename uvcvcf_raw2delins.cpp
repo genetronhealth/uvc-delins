@@ -655,34 +655,38 @@ int main(int argc, char **argv) {
                     int delinsvarDP = cHapSubstr_to_totDP(cHap_string);
                     UPDATE_MAX(max_delinsvarDP, delinsvarDP);
                     if (delinsvarDP < linkdepth || delinsvarDP < linkfrac * vcflineAD) {
-                        // fprintf(stderr, "Skipping the variant %s %d because it has low DP\n", tname, line->pos);
+                        fprintf(stderr, "Skipping the variant %s %d %s because it has low DP\n", tname, line->pos, cHap_string.c_str());
                         continue; // this variant has low DP
                     }
                     auto vecof_pos_ref_alt_begpos_endpos_tup = map_from_cHap_string_to_vecof_pos_ref_alt_begpos_endpos_tup.find(cHap_string)->second;
                     if (vecof_pos_ref_alt_begpos_endpos_tup.size() == 0) {
-                        // fprintf(stderr, "Skipping the variant %s %d because it has no variants!\n", tname, line->pos);
+                        fprintf(stderr, "Skipping the variant %s %d %s because it has no variants!\n", tname, line->pos, cHap_string.c_str());
                         continue; // no variant is found
                     }
                     
+                    fprintf(stderr, "Keeping the variant %s %d %s because it has some varaints!\n", tname, line->pos, cHap_string.c_str());
+
                     std::sort(vecof_pos_ref_alt_begpos_endpos_tup.begin(), vecof_pos_ref_alt_begpos_endpos_tup.end());
                     
                     const auto vecof_vecof_pos_ref_alt_tup = vecof_pos_ref_alt_tup_split(vecof_pos_ref_alt_begpos_endpos_tup,
-                        defaultCB, defaultCO, defaultCE, enable_short_tandem_repeat_adjust);
+                            defaultCB, defaultCO, defaultCE, enable_short_tandem_repeat_adjust);
+                    for (const auto & vecof_pos_ref_alt_tup : vecof_vecof_pos_ref_alt_tup) {
+                        fprintf(stderr, "\tVariant-haplotype\n");
+                        for (const auto & pos_ref_alt_tup : vecof_pos_ref_alt_tup) {
+                            fprintf(stderr, "\t\tPOS=%d REF=%s ALT=%s\n", std::get<0>(pos_ref_alt_tup), std::get<1>(pos_ref_alt_tup).c_str(), std::get<2>(pos_ref_alt_tup).c_str());
+                        }
+                    }
                     
-                        for (const auto & vecof_pos_ref_alt_tup1 : vecof_vecof_pos_ref_alt_tup) {
+                    for (const auto & vecof_pos_ref_alt_tup1 : vecof_vecof_pos_ref_alt_tup) {
                         
                         if (vecof_pos_ref_alt_tup1.size() <= 1) { 
-                            // fprintf(stderr, "Skipping the variant %s %d because it is not delins\n", tname, line->pos);
+                            fprintf(stderr, "Skipping the variant %s %d because it is not delins\n", tname, line->pos);
                             continue; // this variant is not delins
                         }
                         double errmodel_delinsvarfrac_phred = 0.0;
                         int delinsvar_begpos = INT32_MAX;
                         int delinsvar_endpos = 0;
-                        float cv_qual = FLT_MAX;
-                        int tDPmin = INT_MAX;
-                        int tDPmax = 0;
-                        std::array<int, 2> tADRmin = {INT_MAX, INT_MAX};
-                        std::array<int, 2> tADRmax = {0};
+                        
                         for (auto pos_ref_alt_tup : vecof_pos_ref_alt_tup1) {
                             int pos = std::get<0>(pos_ref_alt_tup);
                             std::string ref = std::get<1>(pos_ref_alt_tup);
@@ -690,25 +694,8 @@ int main(int argc, char **argv) {
                             int endpos = pos + (int)MAX(alt.size(), ref.size());
                             UPDATE_MIN(delinsvar_begpos, pos);
                             UPDATE_MAX(delinsvar_endpos, endpos);
-                            float qual = std::get<3>(pos_ref_alt_tup).qual;
-                            // int tDP = std::get<3>(pos_ref_alt_tup).tDP;
-                            const auto &tADR = std::get<3>(pos_ref_alt_tup).tADR;
-                            assert(tADR.size() == 2);
-                            int tDP = (tADR[0] + tADR[1]);
-                            UPDATE_MIN(tDPmin, tDP);
-                            UPDATE_MAX(tDPmax, tDP);
-                            for (int j = 0; j < 2; j++) {
-                                UPDATE_MIN(tADRmin[j], tADR[j]);
-                                UPDATE_MAX(tADRmax[j], tADR[j]);
-                                assert (tADR[1] <= tDP);
-                                assert ((delinsvarDP <= tADR[1]) || !fprintf(stderr, "%d <= %d failed for tid %d pos %ld!", delinsvarDP, tADR[1], line->rid, line->pos));
-                            }
-                            errmodel_delinsvarfrac_phred += 10.0 / log(10.0) * log((double)(tADR[1] - delinsvarDP + 0.5) / (double)(tDP + 1.0));
-                            cv_qual = MIN(qual, cv_qual);
                         }
-                        double delinsvarfrac = (double)(delinsvarDP + 0.5) / (double)(tDPmax + 1.0);
-                        double delinsvarfrac_ratio_phred = 10.0 / log(10.0) * log(delinsvarfrac) - errmodel_delinsvarfrac_phred;
-                        
+
                         std::string delins_ref = refstring.substr(delinsvar_begpos, delinsvar_endpos - delinsvar_begpos);
                         std::vector<std::string> delins_alt_;
                         for (const auto base : delins_ref) {
@@ -729,21 +716,55 @@ int main(int argc, char **argv) {
                         }
                         int vcfline_pos = (std::get<0>(pos_ref_alt_tup_from_vcfline));
                         if (delinsvar_begpos > vcfline_pos || vcfline_pos >= (delinsvar_begpos + (int)MAX(delins_ref.size(), delins_alt.size()))) { 
-                            /*
                             fprintf(stderr, "Skipping the variant %s %d %s %s because it is outside the ROI\n", 
                                 tname, vcfline_pos, 
                                 std::get<1>(pos_ref_alt_tup_from_vcfline).c_str(), 
                                 std::get<2>(pos_ref_alt_tup_from_vcfline).c_str());
-                            */
                             continue; // this var is outside the delins var region
                         }
                         const auto delinsvar_3tup = std::make_tuple(delinsvar_begpos, delins_ref, delins_alt);
                         
+                        float cv_qual = FLT_MAX;
+                        int tDPmin = INT_MAX;
+                        int tDPmax = 0;
+                        std::array<int, 2> tADRmin = {INT_MAX, INT_MAX};
+                        std::array<int, 2> tADRmax = {0};
+                        for (auto pos_ref_alt_tup : vecof_pos_ref_alt_tup1) {
+                            float qual = std::get<3>(pos_ref_alt_tup).qual;
+                            std::string ref = std::get<1>(pos_ref_alt_tup);
+                            std::string alt = std::get<2>(pos_ref_alt_tup);
+                            if (ref.size() != alt.size()) {
+                                size_t simple_size = MAX(ref.size(), alt.size());
+                                size_t delins_size = MAX(delins_ref.size(), delins_alt.size()); 
+                                qual += 10 / log(10) * log(MAX(delins_size, simple_size) / (double)simple_size);
+                            }
+                            // int tDP = std::get<3>(pos_ref_alt_tup).tDP;
+                            const auto &tADR = std::get<3>(pos_ref_alt_tup).tADR;
+                            assert(tADR.size() == 2);
+                            int tDP = (tADR[0] + tADR[1]);
+                            UPDATE_MIN(tDPmin, tDP);
+                            UPDATE_MAX(tDPmax, tDP);
+                            for (int j = 0; j < 2; j++) {
+                                UPDATE_MIN(tADRmin[j], tADR[j]);
+                                UPDATE_MAX(tADRmax[j], tADR[j]);
+                                assert (tADR[1] <= tDP);
+                                assert ((delinsvarDP <= tADR[1]) || !fprintf(stderr, "%d <= %d failed for tid %d pos %ld!", delinsvarDP, tADR[1], line->rid, line->pos));
+                            }
+                            errmodel_delinsvarfrac_phred += 10.0 / log(10.0) * log((double)(tADR[1] - delinsvarDP + 0.5) / (double)(tDP + 1.0));
+                            cv_qual = MIN(qual, cv_qual);
+                        }
+                        double delinsvarfrac = (double)(delinsvarDP + 0.5) / (double)(tDPmax + 1.0);
+                        double delinsvarfrac_ratio_phred = 10.0 / log(10.0) * log(delinsvarfrac) - errmodel_delinsvarfrac_phred;
+                        
                         if (delinsvar_3tups.find(delinsvar_3tup) != delinsvar_3tups.end()) { 
-                            fprintf(stderr, "Skipping the variant %s %d %s %s because it is already visited\n", 
+                            fprintf(stderr, "Skipping the variant %s %d %s %s (delins: %d %s %s) because it is already visited\n", 
                                 tname, vcfline_pos, 
                                 std::get<1>(pos_ref_alt_tup_from_vcfline).c_str(), 
-                                std::get<2>(pos_ref_alt_tup_from_vcfline).c_str());
+                                std::get<2>(pos_ref_alt_tup_from_vcfline).c_str(),
+                                std::get<0>(delinsvar_3tup),
+                                std::get<1>(delinsvar_3tup).c_str(),
+                                std::get<2>(delinsvar_3tup).c_str()
+                                );
                             is_part_of_delinsvar_3tups = true;
                             tADRmin_overall += tADRmin[1];
                             tADRmax_overall += tADRmax[1];
