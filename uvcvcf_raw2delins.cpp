@@ -677,13 +677,14 @@ int main(int argc, char **argv) {
                     
                     const auto vecof_vecof_pos_ref_alt_tup = vecof_pos_ref_alt_tup_split(vecof_pos_ref_alt_begpos_endpos_tup,
                             defaultCB, defaultCO, defaultCE, enable_short_tandem_repeat_adjust);
+                    /*
                     for (const auto & vecof_pos_ref_alt_tup : vecof_vecof_pos_ref_alt_tup) {
                         fprintf(stderr, "\tVariant-haplotype\n");
                         for (const auto & pos_ref_alt_tup : vecof_pos_ref_alt_tup) {
                             fprintf(stderr, "\t\tPOS=%d REF=%s ALT=%s\n", std::get<0>(pos_ref_alt_tup), std::get<1>(pos_ref_alt_tup).c_str(), std::get<2>(pos_ref_alt_tup).c_str());
                         }
                     }
-                    
+                    */
                     for (const auto & vecof_pos_ref_alt_tup1 : vecof_vecof_pos_ref_alt_tup) {
                         
                         if (vecof_pos_ref_alt_tup1.size() <= 1) { 
