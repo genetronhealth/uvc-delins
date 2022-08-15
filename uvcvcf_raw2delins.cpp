@@ -268,6 +268,7 @@ std::map<std::string, int> build_tname2tid_from_faidx(const faidx_t *faidx) {
     return ret;
 }
 
+const size_t DEFAULT_B = 1024*4;
 const double DEFAULT_C = 0.75 + 1e-6;
 const double DEFAULT_C2 = 0.50 + 1e-6;
 const double DEFAULT_C3 = 0.75 + 1e-6;
@@ -291,6 +292,8 @@ void help(int argc, char **argv) {
     
     fprintf(stderr, " -2 the fraction of simple-variant depth used to construct the delins variant with the highest depth, above which the simple variant is discarded in -D if -3 is also satisfied [default to %f].\n", DEFAULT_C2);
     fprintf(stderr, " -3 min ratio of min-depth to max-depth of the simple variants, above which the simple variants are discarded in -D if -2 is also satisfied [default to %f].\n", DEFAULT_C3);
+    
+    fprintf(stderr, " -b the number of variants kept in the buffer to resolve ambiguous alignments [default to %lu].\n", DEFAULT_B);
 
     fprintf(stderr, " -c the fraction of simple-variant depth used to construct the delins variant with the highest depth, above which the simple variant is discarded in -D [default to %f].\n", DEFAULT_C);
     fprintf(stderr, " -d minimum allele depth of the linked variants [default to %d].\n", DEFAULT_D);
@@ -338,6 +341,7 @@ int main(int argc, char **argv) {
     
     char *bedfile = NULL;
     double powlaw_exponent = POWLAW_EXPONENT;
+    size_t defaultB = DEFAULT_B;
     double defaultC = DEFAULT_C;
     double defaultC2 = DEFAULT_C2;
     double defaultC3 = DEFAULT_C3;
@@ -356,8 +360,9 @@ int main(int argc, char **argv) {
     const char *non_delins_outvcfname = NULL;
     const char *defaultMode = DEFAULT_M;
     int opt = -1;
-    while ((opt = getopt(argc, argv, "2:3:c:d:f:p:A:B:C:D:E:M:H:O:T:ILRShv")) != -1) {
+    while ((opt = getopt(argc, argv, "2:3:b:c:d:f:p:A:B:C:D:E:M:H:O:T:ILRShv")) != -1) {
         switch (opt) {
+            case 'b': defaultB = atoi(optarg); break;
             case 'c': defaultC = atof(optarg); break; // delins2simple_var_frac_above_which_discard_simple 
             case '2': defaultC2 = atof(optarg); break;
             case '3': defaultC3 = atof(optarg); break;
@@ -574,7 +579,9 @@ int main(int argc, char **argv) {
         
         bcf_sr_seek(sr, tname, 0);
         std::cerr << "Will finish processing tname " << tname << "\n";
-        std::set<std::tuple<int, std::string, std::string>> delinsvar_3tups;
+        // std::set<std::tuple<int, std::string, std::string>> delinsvar_3tups;
+        std::map<std::tuple<int, std::string, std::string>, std::tuple<double, std::string>> delinsvar_pos_ref_alt_to_vq_vline;
+        
         while (bcf_sr_next_line(sr)) {
            
             int linkdepth = linkdepth1;
@@ -655,16 +662,16 @@ int main(int argc, char **argv) {
                     int delinsvarDP = cHapSubstr_to_totDP(cHap_string);
                     UPDATE_MAX(max_delinsvarDP, delinsvarDP);
                     if (delinsvarDP < linkdepth || delinsvarDP < linkfrac * vcflineAD) {
-                        fprintf(stderr, "Skipping the variant %s %d %s because it has low DP\n", tname, line->pos, cHap_string.c_str());
+                        //fprintf(stderr, "Skipping the variant %s %d %s because it has low DP\n", tname, line->pos, cHap_string.c_str());
                         continue; // this variant has low DP
                     }
                     auto vecof_pos_ref_alt_begpos_endpos_tup = map_from_cHap_string_to_vecof_pos_ref_alt_begpos_endpos_tup.find(cHap_string)->second;
                     if (vecof_pos_ref_alt_begpos_endpos_tup.size() == 0) {
-                        fprintf(stderr, "Skipping the variant %s %d %s because it has no variants!\n", tname, line->pos, cHap_string.c_str());
+                        //fprintf(stderr, "Skipping the variant %s %d %s because it has no variants!\n", tname, line->pos, cHap_string.c_str());
                         continue; // no variant is found
                     }
                     
-                    fprintf(stderr, "Keeping the variant %s %d %s because it has some varaints!\n", tname, line->pos, cHap_string.c_str());
+                    // fprintf(stderr, "Keeping the variant %s %d %s because it has some varaints!\n", tname, line->pos, cHap_string.c_str());
 
                     std::sort(vecof_pos_ref_alt_begpos_endpos_tup.begin(), vecof_pos_ref_alt_begpos_endpos_tup.end());
                     
@@ -680,7 +687,7 @@ int main(int argc, char **argv) {
                     for (const auto & vecof_pos_ref_alt_tup1 : vecof_vecof_pos_ref_alt_tup) {
                         
                         if (vecof_pos_ref_alt_tup1.size() <= 1) { 
-                            fprintf(stderr, "Skipping the variant %s %d because it is not delins\n", tname, line->pos);
+                            // fprintf(stderr, "Skipping the variant %s %d because it is not delins\n", tname, line->pos);
                             continue; // this variant is not delins
                         }
                         double errmodel_delinsvarfrac_phred = 0.0;
@@ -756,20 +763,7 @@ int main(int argc, char **argv) {
                         double delinsvarfrac = (double)(delinsvarDP + 0.5) / (double)(tDPmax + 1.0);
                         double delinsvarfrac_ratio_phred = 10.0 / log(10.0) * log(delinsvarfrac) - errmodel_delinsvarfrac_phred;
                         
-                        if (delinsvar_3tups.find(delinsvar_3tup) != delinsvar_3tups.end()) { 
-                            fprintf(stderr, "Skipping the variant %s %d %s %s (delins: %d %s %s) because it is already visited\n", 
-                                tname, vcfline_pos, 
-                                std::get<1>(pos_ref_alt_tup_from_vcfline).c_str(), 
-                                std::get<2>(pos_ref_alt_tup_from_vcfline).c_str(),
-                                std::get<0>(delinsvar_3tup),
-                                std::get<1>(delinsvar_3tup).c_str(),
-                                std::get<2>(delinsvar_3tup).c_str()
-                                );
-                            is_part_of_delinsvar_3tups = true;
-                            tADRmin_overall += tADRmin[1];
-                            tADRmax_overall += tADRmax[1];
-                            continue; // this var has already been printed
-                        }
+                        
                         int cv_begpos = delinsvar_begpos;
                         std::string cv_ref = delins_ref;
                         std::string cv_alt = delins_alt;
@@ -794,12 +788,35 @@ int main(int argc, char **argv) {
                             cv_alt = cv_alt.substr(0, cv_alt.size() - endpos_dec);
                         }
                         double hv_qual = (powlaw_exponent * delinsvarfrac_ratio_phred); // c and h : combined and haplotyped combined
-                        std::cout 
+                        double varqual = MIN(cv_qual, hv_qual);
+                        
+                        
+                        if (delinsvar_pos_ref_alt_to_vq_vline.find(delinsvar_3tup) != delinsvar_pos_ref_alt_to_vq_vline.end()) {
+                            double max_varqual = std::get<0>(delinsvar_pos_ref_alt_to_vq_vline.find(delinsvar_3tup)->second);
+                            if (varqual < max_varqual) {
+                            fprintf(stderr, "Skipping the variant %s %d %s %s (delins: %d %s %s) because it is already visited\n", 
+                                tname, vcfline_pos, 
+                                std::get<1>(pos_ref_alt_tup_from_vcfline).c_str(), 
+                                std::get<2>(pos_ref_alt_tup_from_vcfline).c_str(),
+                                std::get<0>(delinsvar_3tup),
+                                std::get<1>(delinsvar_3tup).c_str(),
+                                std::get<2>(delinsvar_3tup).c_str()
+                                );
+                            is_part_of_delinsvar_3tups = true;
+                            tADRmin_overall += tADRmin[1];
+                            tADRmax_overall += tADRmax[1];
+                            continue; // this var has already been printed
+                            }
+                        }
+
+                        
+                        std::ostringstream oss;
+                        oss
                             << tname 
                             << "\t" << (cv_begpos + 1) 
                             << "\t.\t" << cv_ref 
                             << "\t" << cv_alt 
-                            << "\t" << std::to_string(MIN(cv_qual, hv_qual)) 
+                            << "\t" << std::to_string(varqual) 
                             << "\t.\t" // FILTER
                             <<        BCF_INFO_LIST[delinsHap].ID << "=" << cHap_string 
                             << ";" << BCF_INFO_LIST[diPRA].ID     << "="
@@ -817,19 +834,29 @@ int main(int argc, char **argv) {
                             << ";" << BCF_INFO_LIST[diHVQ].ID    << "=" << hv_qual
                             << ";" << BCF_INFO_LIST[diCVQ].ID    << "=" << cv_qual
                             << "\n";
-                        for (auto it = delinsvar_3tups.begin(); it != delinsvar_3tups.end(); ) {
-                            int endpos = std::get<0>(*it) + (int)MAX(std::get<1>(*it).size(), std::get<2>(*it).size());
+                        // fprintf(stderr, "Generating the variant %s\n", oss.str().c_str());
+                        std::tuple<double, std::string> var_record = std::make_tuple(varqual, oss.str());
+                        /*
+                        for (auto it = delinsvar_pos_ref_alt_to_vq_vline.begin(); it != delinsvar_pos_ref_alt_to_vq_vline.end(); ) {
+                            int endpos = std::get<0>(it->first) + (int)MAX(std::get<1>(it->first).size(), std::get<2>(it->first).size());
                             if (endpos < vcfline_pos) {
-                                it = delinsvar_3tups.erase(it);
+                                it = delinsvar_pos_ref_alt_to_vq_vline.erase(it);
                             } else {
                                 it++;
                             }
                         }
+                        */
                         tADRmin_overall += tADRmin[1];
                         tADRmax_overall += tADRmax[1];
-                        delinsvar_3tups.insert(delinsvar_3tup);
-                        if (delinsvar_3tups.find(delinsvar_3tup) != delinsvar_3tups.end()) {
-                            is_part_of_delinsvar_3tups = true;
+                        // delinsvar_3tups.insert(delinsvar_3tup);
+                        //if (delinsvar_3tups.find(delinsvar_3tup) != delinsvar_3tups.end()) {
+                        //    is_part_of_delinsvar_3tups = true;
+                        //}
+                        delinsvar_pos_ref_alt_to_vq_vline[delinsvar_3tup] = var_record;
+                        is_part_of_delinsvar_3tups = true;
+                        while (delinsvar_pos_ref_alt_to_vq_vline.size() > defaultB) {
+                            std::cout << std::get<1>(delinsvar_pos_ref_alt_to_vq_vline.begin()->second);
+                            delinsvar_pos_ref_alt_to_vq_vline.erase(delinsvar_pos_ref_alt_to_vq_vline.begin());
                         }
                     }
                 }
@@ -851,6 +878,9 @@ int main(int argc, char **argv) {
                     assert(vcf_write_ret >= 0 || !fprintf(stderr, "The VCF record at tid-pos-ref-alt %d %ld %s %s\n", line->rid, line->pos, line->d.allele[0], line->d.allele[1]));
                 }
             }
+        }
+        for (const auto & vq_vline : delinsvar_pos_ref_alt_to_vq_vline) {
+            std::cout << std::get<1>(vq_vline.second);
         }
         bcf_sr_destroy(sr);
     }
