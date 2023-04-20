@@ -40,22 +40,15 @@ All bug reports, feature requests, and ideas for improvement are welcome (althou
 
 For more information, please check the wiki.
 
-# References
-
-## Publication
-
-In progress
 
 ## Patent
 
-In progress
-
-
+CN114566214A    检测基因组缺失插入变异的方法及检测装置和计算机可读存储介质与应用
 
 # Contact: XiaoFei Zhao
 
-xiaofei DOT zhao AT genetronhealth DOT com
+x43zhao AT uwaterloo DOT ca (first email to be reached at)
 
-x43zhao AT uwaterloo DOT ca
+cndfeifei AT gmail DOT com (if the above email does not work)
 
-cndfeifei AT gmail DOT com
+xiaofei DOT zhao AT genetronhealth DOT com (if the above email does not work)
